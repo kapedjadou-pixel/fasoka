@@ -1,11 +1,27 @@
-@"
+# Dépendances
 node_modules/
+
+# Secrets et configuration locale
 .env
 .env.*
 !.env.example
+
+# Builds
 dist/
 build/
 .expo/
-.DS_Store
+web-build/
+
+# Logs
 *.log
-"@ | Set-Content .gitignore
+npm-debug.log*
+
+# Système / éditeurs
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Flutter
+fasoka-app/.dart_tool/
+fasoka-app/build/
