@@ -264,6 +264,20 @@ async function updateOrderStatus(req, res, next) {
       [statut, req.order.id]
     );
 
+        // Une commande annulée rend les articles au stock (le stock est décrémenté à la création).
+    // Grâce aux transitions, une commande ne peut être annulée qu'une seule fois : pas de double remise en stock.
+    if (statut === 'annulee') {
+      await client.query(
+        `UPDATE products p SET stock_quantite = p.stock_quantite + t.quantite
+         FROM (
+           SELECT product_id, SUM(quantite)::int AS quantite
+           FROM order_items WHERE order_id = $1 GROUP BY product_id
+         ) t
+         WHERE p.id = t.product_id`,
+        [req.order.id]
+      );
+    }
+    
     // Quand une commande est livrée, on incrémente le compteur de ventes de la boutique.
     // Grâce aux transitions, cela ne peut arriver qu'une seule fois par commande.
     if (statut === 'livree') {
