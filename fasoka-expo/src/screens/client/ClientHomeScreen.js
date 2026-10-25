@@ -35,6 +35,10 @@ function prenomAffichable(user) {
     .join('');
 }
 
+// Graine de mélange : une nouvelle valeur au hasard donne un nouvel ordre des produits
+function nouvelleGraine() {
+  return Math.random().toString(36).slice(2, 12) + Date.now().toString(36);
+}
 export default function ClientHomeScreen({ navigation }) {
   const { ajouter } = useCart();
   const { user } = useAuth();
@@ -47,6 +51,9 @@ export default function ClientHomeScreen({ navigation }) {
   const [dernierAjout, setDernierAjout] = useState(null);
   const entreeHistorique = useRef(false); // vrai si une entrée a été ajoutée à l'historique du navigateur
 
+    // Une graine par visite : l'ordre des produits change à chaque ouverture de l'app / chargement de la page,
+  // mais reste identique pendant la visite (retour d'une recherche, changement d'onglet).
+  const graine = useRef(nouvelleGraine());
   const largeurContenu = Math.min(width, LARGEUR_MAX);
   const colonnes = nombreColonnes(largeurContenu);
   // Largeur fixe calculée pour chaque carte : une carte seule ne s'étire plus sur toute la ligne
@@ -56,7 +63,9 @@ export default function ClientHomeScreen({ navigation }) {
     setChargement(true);
     setErreur(null);
     try {
-      const data = await ApiClient.get('/products/feed', texte ? { recherche: texte } : undefined);
+            const data = await ApiClient.get('/products/feed', texte
+        ? { recherche: texte, seed: graine.current }
+        : { seed: graine.current });
       setProduits(data);
     } catch (e) {
       setErreur('Impossible de charger les produits.');
@@ -253,7 +262,11 @@ export default function ClientHomeScreen({ navigation }) {
           ListEmptyComponent={vide}
           renderItem={carteProduit}
           refreshing={false}
-          onRefresh={() => charger(termeActif)}
+          onRefresh={() => {
+            // Tirer pour actualiser : nouvel ordre au hasard
+            graine.current = nouvelleGraine();
+            charger(termeActif);
+          }}
           contentContainerStyle={{ paddingBottom: 24 }}
         />
       </View>
