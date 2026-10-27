@@ -86,6 +86,12 @@ export function AuthProvider({ children }) {
     await sauvegarderSession(data);
   }, [sauvegarderSession]);
 
+         // Connexion avec Google : `credential` est le jeton remis par Google au navigateur
+       const connexionGoogle = useCallback(async (credential) => {
+         const data = await ApiClient.post('/auth/google', { credential });
+         await sauvegarderSession(data);
+       }, [sauvegarderSession]);
+  
   const deconnexion = useCallback(async () => {
     await AsyncStorage.removeItem('auth_token');
     await AsyncStorage.removeItem('auth_user');
@@ -94,7 +100,7 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, chargementSession, inscription, connexion, deconnexion, mettreAJourUtilisateur }}
+      value={{ user, chargementSession, inscription, connexion, connexionGoogle, deconnexion, mettreAJourUtilisateur }}
     >
       {children}
     </AuthContext.Provider>
