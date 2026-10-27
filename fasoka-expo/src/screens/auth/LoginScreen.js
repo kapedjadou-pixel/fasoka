@@ -442,6 +442,15 @@ export default function LoginScreen({ modeInitial = 'connexion' }) {
         </View>
       ) : null}
 
+              {estOubli && etapeOubli === 2 ? (
+        <View style={styles.astuceBloc}>
+          <Ionicons name="mail-unread-outline" size={18} color={COLORS.orFonce} style={{ marginRight: 8 }} />
+          <Text style={styles.astuceTexte}>
+            Rien reçu ? Regardez dans vos courriers indésirables (spam), puis utilisez « Renvoyer le code ».
+          </Text>
+        </View>
+      ) : null}
+        
       <TouchableOpacity style={[styles.bouton, chargement && { opacity: 0.7 }]} onPress={valider} disabled={chargement} activeOpacity={0.85}>
         {chargement ? (
           <ActivityIndicator color={COLORS.noir} />
@@ -604,6 +613,16 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   infoTexte: { flex: 1, color: '#1B5E20', fontSize: 13, lineHeight: 18 },
+    astuceBloc: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF6DB',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginTop: 4,
+  },
+  astuceTexte: { flex: 1, color: COLORS.noir, fontSize: 13, lineHeight: 18 },
 
   separateur: { flexDirection: 'row', alignItems: 'center', marginTop: 14, marginBottom: 18 },
   separateurTrait: { flex: 1, height: 1, backgroundColor: '#E6E2D8' },
