@@ -9,6 +9,7 @@ import { COLORS } from '../../theme/colors';
 import { useAuth } from '../../context/AuthContext';
 import { ApiClient, ApiException } from '../../api/apiClient';
 import HeroCarousel from '../../components/auth/HeroCarousel';
+import BoutonGoogle from '../../components/auth/BoutonGoogle';
 
 const NATIF = Platform.OS !== 'web';
 const LARGEUR_DEUX_COLONNES = 900; // à partir de cette largeur : images animées à gauche, formulaire à droite
@@ -84,7 +85,7 @@ function Onglets({ mode, onChange }) {
 
 // `modeInitial` : 'connexion' (par défaut) ou 'inscription'
 export default function LoginScreen({ modeInitial = 'connexion' }) {
-  const { connexion, inscription } = useAuth();
+  const { connexion, inscription, connexionGoogle } = useAuth();
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const deuxColonnes = width >= LARGEUR_DEUX_COLONNES;
@@ -196,6 +197,22 @@ export default function LoginScreen({ modeInitial = 'connexion' }) {
     }
   }
 
+  // Connexion / inscription avec Google : le bouton officiel nous remet un jeton, vérifié ensuite par notre serveur
+  async function connecterGoogle(credential) {
+    if (chargement) return;
+    setErreur(null);
+    setInfo(null);
+    setChargement(true);
+    try {
+      await connexionGoogle(credential);
+      // La navigation racine bascule automatiquement une fois `user` défini (voir App.js)
+    } catch (e) {
+      setErreur(messageErreur(e, 'Impossible de se connecter avec Google. Vérifiez votre connexion internet.'));
+    } finally {
+      setChargement(false);
+    }
+  }
+
   async function valider() {
     if (chargement) return;
     setErreur(null);
@@ -273,6 +290,17 @@ export default function LoginScreen({ modeInitial = 'connexion' }) {
 
       <Text style={styles.titreForm}>{titre}</Text>
       <Text style={styles.sousTitreForm}>{sousTitre}</Text>
+
+      {!estOubli && Platform.OS === 'web' ? (
+        <>
+          <BoutonGoogle onCredential={connecterGoogle} />
+          <View style={styles.separateur}>
+            <View style={styles.separateurTrait} />
+            <Text style={styles.separateurTexte}>ou avec votre email</Text>
+            <View style={styles.separateurTrait} />
+          </View>
+        </>
+      ) : null}
 
       {estConnexion ? (
         <>
@@ -576,4 +604,8 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   infoTexte: { flex: 1, color: '#1B5E20', fontSize: 13, lineHeight: 18 },
+
+  separateur: { flexDirection: 'row', alignItems: 'center', marginTop: 14, marginBottom: 18 },
+  separateurTrait: { flex: 1, height: 1, backgroundColor: '#E6E2D8' },
+  separateurTexte: { marginHorizontal: 12, fontSize: 12.5, color: COLORS.gris },
 });
