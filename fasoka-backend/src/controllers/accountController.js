@@ -40,6 +40,11 @@ async function initialiserTables() {
        `ALTER TABLE verification_codes ADD CONSTRAINT verification_codes_type_check
         CHECK (type IN ('mot_de_passe', 'email', 'reinitialisation'))`
      );
+       // Connexion avec Google : identifiant Google du compte (unique quand il existe)
+     await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id VARCHAR(255)`);
+     await db.query(
+       `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id) WHERE google_id IS NOT NULL`
+     );
 }
 
 // ---------- Utilitaires ----------
