@@ -65,6 +65,8 @@ app.use('/api/auth/login', limiteLogin);
 app.use('/api/auth/signup', limiteInscription);
 app.use('/api/auth/confirm', limiteCodes);
 app.use('/api/auth/resend-code', limiteCodes);
+app.use('/api/auth/forgot-password', limiteCodes);
+app.use('/api/auth/reset-password', limiteCodes);
 app.use('/api/account/security', limiteCodes);
 
 // Routes
