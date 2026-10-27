@@ -22,7 +22,7 @@ const SLIDES = [
     titreAccent: 'boutique',
     titreFin: ' en quelques minutes',
     texte: 'Créez votre boutique, publiez vos produits avec des photos et faites-vous découvrir par de nouveaux clients.',
-    image: null,
+    image: require('../../../assets/auth/ventes.jpg'),
     cartes: [
       { icone: 'camera', titre: 'Produit publié', detail: 'Sac en cuir · 12 500 F CFA', cote: 'gauche', y: '3%', couleur: COLORS.or },
       { icone: 'people', titre: 'Nouveaux clients', detail: 'Ils découvrent votre boutique', cote: 'droite', y: '18%', couleur: COLORS.rouge },
@@ -36,7 +36,7 @@ const SLIDES = [
     titreAccent: 'près de chez vous',
     titreFin: '',
     texte: "Parcourez les produits de nombreuses boutiques, recherchez ce qu'il vous faut et ajoutez-le au panier.",
-    image: null,
+    image: require('../../../assets/auth/produits.jpg'),
     cartes: [
       { icone: 'search', titre: 'Rechercher un produit', detail: 'Parmi toutes les boutiques', cote: 'droite', y: '3%', couleur: COLORS.or },
       { icone: 'location', titre: 'Près de chez vous', detail: 'Les boutiques de votre ville', cote: 'gauche', y: '18%', couleur: COLORS.rouge },
@@ -50,7 +50,7 @@ const SLIDES = [
     titreAccent: 'simplement',
     titreFin: ' et suivez vos achats',
     texte: 'Ajoutez vos articles au panier, validez votre commande et retrouvez tout votre historique au même endroit.',
-    image: null,
+    image: require('../../../assets/auth/commande.jpg'),
     cartes: [
       { icone: 'cart', titre: 'Mon panier', detail: '3 articles · 18 500 F CFA', cote: 'gauche', y: '3%', couleur: COLORS.or },
       { icone: 'checkmark-circle', titre: 'Commande confirmée', detail: 'Retrait en boutique', cote: 'droite', y: '18%', couleur: COLORS.rouge },
@@ -64,7 +64,7 @@ const SLIDES = [
     titreAccent: 'vos ventes',
     titreFin: '',
     texte: "Suivez vos commandes, surveillez votre stock et soyez alerté quand un produit est presque épuisé.",
-    image: null,
+    image: require('../../../assets/auth/boutique.jpg'),
     cartes: [
       { icone: 'stats-chart', titre: 'Tableau de bord', detail: "Vos ventes en un coup d'œil", cote: 'droite', y: '3%', couleur: COLORS.or },
       { icone: 'alert-circle', titre: 'Stock faible', detail: 'Plus que 3 en stock', cote: 'gauche', y: '18%', couleur: COLORS.rouge },
