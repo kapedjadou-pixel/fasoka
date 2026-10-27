@@ -34,6 +34,12 @@ async function initialiserTables() {
   await db.query(
     `CREATE INDEX IF NOT EXISTS idx_verification_codes_user ON verification_codes(user_id, type)`
   );
+       // Autorise le type « reinitialisation » (mot de passe oublié) dans les bases déjà créées
+     await db.query(`ALTER TABLE verification_codes DROP CONSTRAINT IF EXISTS verification_codes_type_check`);
+     await db.query(
+       `ALTER TABLE verification_codes ADD CONSTRAINT verification_codes_type_check
+        CHECK (type IN ('mot_de_passe', 'email', 'reinitialisation'))`
+     );
 }
 
 // ---------- Utilitaires ----------
