@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS } from '../../theme/colors';
 import { useAuth } from '../../context/AuthContext';
-import { ApiException } from '../../api/apiClient';
+import { ApiClient, ApiException } from '../../api/apiClient';
 import HeroCarousel from '../../components/auth/HeroCarousel';
 
 const NATIF = Platform.OS !== 'web';
@@ -89,20 +89,24 @@ export default function LoginScreen({ modeInitial = 'connexion' }) {
   const insets = useSafeAreaInsets();
   const deuxColonnes = width >= LARGEUR_DEUX_COLONNES;
 
-  const [mode, setMode] = useState(modeInitial);
+  const [mode, setMode] = useState(modeInitial); // 'connexion' | 'inscription' | 'oubli'
+  const [etapeOubli, setEtapeOubli] = useState(1); // 1 : saisir son email, 2 : saisir le code reçu et le nouveau mot de passe
   const [identifiant, setIdentifiant] = useState('');
   const [prenom, setPrenom] = useState('');
   const [nom, setNom] = useState('');
   const [email, setEmail] = useState('');
   const [motDePasse, setMotDePasse] = useState('');
+  const [code, setCode] = useState('');
   const [chargement, setChargement] = useState(false);
   const [erreur, setErreur] = useState(null);
+  const [info, setInfo] = useState(null);
 
   const refNom = useRef(null);
   const refEmail = useRef(null);
   const refMotDePasse = useRef(null);
 
   const estConnexion = mode === 'connexion';
+  const estOubli = mode === 'oubli';
 
   function changerMode(nouveauMode) {
     if (nouveauMode === mode) return;
@@ -110,13 +114,97 @@ export default function LoginScreen({ modeInitial = 'connexion' }) {
     if (nouveauMode === 'inscription' && !email && identifiant.includes('@')) setEmail(identifiant.trim());
     if (nouveauMode === 'connexion' && !identifiant && email) setIdentifiant(email.trim());
     setMotDePasse('');
+    setCode('');
     setErreur(null);
+    setInfo(null);
+    setEtapeOubli(1);
     setMode(nouveauMode);
+  }
+
+  function ouvrirOubli() {
+    if (!email && identifiant.includes('@')) setEmail(identifiant.trim());
+    setMotDePasse('');
+    setCode('');
+    setErreur(null);
+    setInfo(null);
+    setEtapeOubli(1);
+    setMode('oubli');
+  }
+
+  function messageErreur(e, defaut) {
+    return e instanceof ApiException ? e.message : defaut;
+  }
+
+  // Mot de passe oublié : étape 1 (envoi du code par email), étape 2 (code + nouveau mot de passe)
+  async function validerOubli() {
+    const adresse = email.trim();
+    if (!EMAIL_REGEX.test(adresse)) {
+      setErreur("Saisissez l'adresse email de votre compte.");
+      return;
+    }
+    if (etapeOubli === 2) {
+      if (!/^\d{6}$/.test(code.trim())) {
+        setErreur('Saisissez le code à 6 chiffres reçu par email.');
+        return;
+      }
+      if (motDePasse.length < 8) {
+        setErreur('Le mot de passe doit contenir au moins 8 caractères.');
+        return;
+      }
+    }
+
+    setChargement(true);
+    try {
+      if (etapeOubli === 1) {
+        await ApiClient.post('/auth/forgot-password', { email: adresse });
+        setCode('');
+        setMotDePasse('');
+        setEtapeOubli(2);
+      } else {
+        await ApiClient.post('/auth/reset-password', {
+          email: adresse,
+          code: code.trim(),
+          nouveau_mot_de_passe: motDePasse,
+        });
+        // Retour à la connexion, avec l'email déjà rempli
+        setIdentifiant(adresse);
+        setMotDePasse('');
+        setCode('');
+        setEtapeOubli(1);
+        setMode('connexion');
+        setInfo('Mot de passe modifié. Vous pouvez maintenant vous connecter.');
+      }
+    } catch (e) {
+      setErreur(messageErreur(e, 'Impossible de contacter le serveur. Vérifiez votre connexion internet.'));
+    } finally {
+      setChargement(false);
+    }
+  }
+
+  async function renvoyerCode() {
+    if (chargement) return;
+    setErreur(null);
+    setInfo(null);
+    setChargement(true);
+    try {
+      await ApiClient.post('/auth/forgot-password', { email: email.trim() });
+      setInfo("Si un compte existe avec cette adresse, un nouveau code vient d'être envoyé.");
+    } catch (e) {
+      setErreur(messageErreur(e, 'Impossible de contacter le serveur. Vérifiez votre connexion internet.'));
+    } finally {
+      setChargement(false);
+    }
   }
 
   async function valider() {
     if (chargement) return;
     setErreur(null);
+    setInfo(null);
+
+    if (estOubli) {
+      await validerOubli();
+      return;
+    }
 
     if (estConnexion) {
       if (!identifiant.trim() || !motDePasse) {
@@ -148,27 +236,43 @@ export default function LoginScreen({ modeInitial = 'connexion' }) {
       // La navigation racine bascule automatiquement une fois `user` défini (voir App.js)
     } catch (e) {
       setErreur(
-        e instanceof ApiException
-          ? e.message
-          : estConnexion
+        messageErreur(
+          e,
+          estConnexion
             ? 'Impossible de se connecter. Vérifiez votre connexion internet.'
             : 'Impossible de créer le compte. Vérifiez votre connexion internet.'
+        )
       );
     } finally {
       setChargement(false);
     }
   }
 
+  const titre = estOubli ? 'Mot de passe oublié' : estConnexion ? 'Content de vous revoir' : 'Créez votre compte';
+  const sousTitre = estOubli
+    ? etapeOubli === 1
+      ? "Saisissez l'email de votre compte : nous vous enverrons un code pour choisir un nouveau mot de passe."
+      : `Si un compte existe avec ${email.trim()}, un code à 6 chiffres vient de lui être envoyé (pensez à vérifier vos spams). Il est valable 10 minutes.`
+    : estConnexion
+      ? 'Connectez-vous pour acheter et vendre sur FASOKA.'
+      : 'Rejoignez FASOKA : achetez et vendez en quelques minutes.';
+  const libelleBouton = estOubli
+    ? etapeOubli === 1 ? 'Envoyer le code' : 'Modifier mon mot de passe'
+    : estConnexion ? 'Se connecter' : 'Créer mon compte';
+
   const formulaire = (
     <View style={styles.formulaire}>
-      <Onglets mode={mode} onChange={changerMode} />
+      {estOubli ? (
+        <TouchableOpacity onPress={() => changerMode('connexion')} style={styles.retour}>
+          <Ionicons name="arrow-back" size={18} color={COLORS.noir} />
+          <Text style={styles.retourTexte}>Retour à la connexion</Text>
+        </TouchableOpacity>
+      ) : (
+        <Onglets mode={mode} onChange={changerMode} />
+      )}
 
-      <Text style={styles.titreForm}>{estConnexion ? 'Content de vous revoir' : 'Créez votre compte'}</Text>
-      <Text style={styles.sousTitreForm}>
-        {estConnexion
-          ? 'Connectez-vous pour acheter et vendre sur FASOKA.'
-          : 'Rejoignez FASOKA : achetez et vendez en quelques minutes.'}
-      </Text>
+      <Text style={styles.titreForm}>{titre}</Text>
+      <Text style={styles.sousTitreForm}>{sousTitre}</Text>
 
       {estConnexion ? (
         <>
@@ -194,7 +298,52 @@ export default function LoginScreen({ modeInitial = 'connexion' }) {
             returnKeyType="go"
             onSubmitEditing={valider}
           />
+          <TouchableOpacity onPress={ouvrirOubli} style={styles.lienOubli}>
+            <Text style={styles.lienOubliTexte}>Mot de passe oublié ?</Text>
+          </TouchableOpacity>
         </>
+      ) : estOubli ? (
+        etapeOubli === 1 ? (
+          <>
+            <Text style={styles.etiquette}>Email</Text>
+            <Champ
+              icone="mail-outline"
+              placeholder="vous@exemple.com"
+              value={email}
+              onChangeText={setEmail}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="email-address"
+              returnKeyType="go"
+              onSubmitEditing={valider}
+            />
+          </>
+        ) : (
+          <>
+            <Text style={styles.etiquette}>Code reçu par email</Text>
+            <Champ
+              icone="keypad-outline"
+              placeholder="6 chiffres"
+              value={code}
+              onChangeText={(t) => setCode(t.replace(/\D/g, ''))}
+              keyboardType="number-pad"
+              maxLength={6}
+              returnKeyType="next"
+              onSubmitEditing={() => refMotDePasse.current && refMotDePasse.current.focus()}
+            />
+            <Text style={styles.etiquette}>Nouveau mot de passe</Text>
+            <Champ
+              ref={refMotDePasse}
+              icone="lock-closed-outline"
+              placeholder="8 caractères minimum"
+              value={motDePasse}
+              onChangeText={setMotDePasse}
+              secure
+              returnKeyType="go"
+              onSubmitEditing={valider}
+            />
+          </>
+        )
       ) : (
         <>
           <View style={styles.ligneDeux}>
@@ -251,6 +400,13 @@ export default function LoginScreen({ modeInitial = 'connexion' }) {
         </>
       )}
 
+      {info ? (
+        <View style={styles.infoBloc} accessibilityLiveRegion="polite">
+          <Ionicons name="checkmark-circle" size={18} color="#2E7D32" style={{ marginRight: 8 }} />
+          <Text style={styles.infoTexte}>{info}</Text>
+        </View>
+      ) : null}
+
       {erreur ? (
         <View style={styles.erreurBloc} accessibilityLiveRegion="polite">
           <Ionicons name="alert-circle" size={18} color={COLORS.rouge} style={{ marginRight: 8 }} />
@@ -263,18 +419,37 @@ export default function LoginScreen({ modeInitial = 'connexion' }) {
           <ActivityIndicator color={COLORS.noir} />
         ) : (
           <>
-            <Text style={styles.boutonTexte}>{estConnexion ? 'Se connecter' : 'Créer mon compte'}</Text>
+            <Text style={styles.boutonTexte}>{libelleBouton}</Text>
             <Ionicons name="arrow-forward" size={18} color={COLORS.noir} style={{ marginLeft: 8 }} />
           </>
         )}
       </TouchableOpacity>
 
-      <TouchableOpacity onPress={() => changerMode(estConnexion ? 'inscription' : 'connexion')} style={styles.bascule}>
-        <Text style={styles.basculeTexte}>
-          {estConnexion ? 'Pas encore de compte ? ' : 'Déjà un compte ? '}
-          <Text style={styles.basculeLien}>{estConnexion ? 'Créer un compte' : 'Se connecter'}</Text>
-        </Text>
-      </TouchableOpacity>
+      {estOubli && etapeOubli === 2 ? (
+        <View style={styles.liensEtape}>
+          <TouchableOpacity onPress={renvoyerCode} disabled={chargement}>
+            <Text style={styles.basculeLien}>Renvoyer le code</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => {
+              setErreur(null);
+              setInfo(null);
+              setEtapeOubli(1);
+            }}
+          >
+            <Text style={styles.basculeLien}>Changer d'adresse email</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
+      {!estOubli ? (
+        <TouchableOpacity onPress={() => changerMode(estConnexion ? 'inscription' : 'connexion')} style={styles.bascule}>
+          <Text style={styles.basculeTexte}>
+            {estConnexion ? 'Pas encore de compte ? ' : 'Déjà un compte ? '}
+            <Text style={styles.basculeLien}>{estConnexion ? 'Créer un compte' : 'Se connecter'}</Text>
+          </Text>
+        </TouchableOpacity>
+      ) : null}
     </View>
   );
 
@@ -385,4 +560,20 @@ const styles = StyleSheet.create({
   bascule: { marginTop: 18, alignItems: 'center', paddingVertical: 4 },
   basculeTexte: { fontSize: 13.5, color: COLORS.gris },
   basculeLien: { color: COLORS.orFonce, fontWeight: '700' },
+
+  retour: { flexDirection: 'row', alignItems: 'center', marginBottom: 22, paddingVertical: 4 },
+  retourTexte: { fontSize: 14, fontWeight: '700', color: COLORS.noir, marginLeft: 8 },
+  lienOubli: { alignSelf: 'flex-end', marginTop: -6, marginBottom: 6, paddingVertical: 4 },
+  lienOubliTexte: { fontSize: 13, fontWeight: '700', color: COLORS.orFonce },
+  liensEtape: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 16 },
+  infoBloc: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E8F5E9',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 6,
+  },
+  infoTexte: { flex: 1, color: '#1B5E20', fontSize: 13, lineHeight: 18 },
 });
