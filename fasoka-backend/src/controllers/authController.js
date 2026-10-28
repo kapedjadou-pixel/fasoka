@@ -11,7 +11,7 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // Champs renvoyés à l'app : jamais le hash du mot de passe ni le code de confirmation
 // (le login faisait `SELECT *` et renvoyait donc code_confirmation au client).
-const CHAMPS_UTILISATEUR = 'id, nom, prenom, email, telephone, compte_verifie, photo_profil_url, created_at';
+const CHAMPS_UTILISATEUR = 'id, nom, prenom, email, telephone, compte_verifie, photo_profil_url, conditions_acceptees_le, created_at';
 
 // Hash factice : permet de dépenser le même temps de calcul quand l'identifiant n'existe pas,
 // pour ne pas révéler par le temps de réponse si un compte existe.
@@ -65,11 +65,17 @@ async function emettreCode(user) {
 // POST /api/auth/signup
 async function signup(req, res, next) {
   try {
-    const { nom, prenom, email, telephone, mot_de_passe } = req.body;
+    const { nom, prenom, email, telephone, mot_de_passe, accepte_conditions } = req.body;
 
     if (!estTexte(nom) || !estTexte(prenom) || typeof mot_de_passe !== 'string' || (!estTexte(email) && !estTexte(telephone))) {
       return res.status(400).json({
         error: 'Nom, prénom, mot de passe et (email ou téléphone) sont obligatoires.',
+      });
+    }
+    // Pour créer un compte, il faut avoir accepté la politique de confidentialité et les conditions d'utilisation
+    if (accepte_conditions !== true) {
+      return res.status(400).json({
+        error: "Tu dois accepter la politique de confidentialité et les conditions d'utilisation pour créer un compte.",
       });
     }
     if (nom.trim().length > 100 || prenom.trim().length > 100) {
@@ -96,8 +102,8 @@ async function signup(req, res, next) {
 
     // Un doublon email/téléphone lève l'erreur PostgreSQL 23505, convertie en 409 par errorHandler
     const result = await db.query(
-      `INSERT INTO users (nom, prenom, email, telephone, mot_de_passe_hash)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO users (nom, prenom, email, telephone, mot_de_passe_hash, conditions_acceptees_le)
+       VALUES ($1, $2, $3, $4, $5, NOW())
        RETURNING ${CHAMPS_UTILISATEUR}`,
       [nom.trim(), prenom.trim(), emailNormalise, telephoneNormalise, mot_de_passe_hash]
     );
