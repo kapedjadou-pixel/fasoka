@@ -12,7 +12,7 @@ const GOOGLE_CLIENT_ID =
 const client = new OAuth2Client(GOOGLE_CLIENT_ID);
 
 // Mêmes champs que la connexion classique : jamais le hash du mot de passe ni les codes
-const CHAMPS_UTILISATEUR = 'id, nom, prenom, email, telephone, compte_verifie, photo_profil_url, created_at';
+const CHAMPS_UTILISATEUR = 'id, nom, prenom, email, telephone, compte_verifie, photo_profil_url, conditions_acceptees_le, created_at';
 
 function extraireNoms(payload, email) {
   const complet = (payload.name || '').trim();
@@ -79,6 +79,8 @@ async function loginGoogle(req, res, next) {
     }
 
     // 3) Nouveau compte : l'email est vérifié par Google, le compte est donc créé « vérifié ».
+    // La page de connexion indique « En continuant avec Google, vous acceptez la politique de confidentialité et les
+    // conditions d'utilisation » : l'acceptation est donc enregistrée à la création du compte.
     // Le mot de passe est un secret aléatoire que personne ne connaît : la connexion par mot de passe reste fermée
     // tant que la personne n'a pas utilisé « Mot de passe oublié » pour en choisir un.
     const { prenom, nom } = extraireNoms(payload, email);
@@ -86,8 +88,8 @@ async function loginGoogle(req, res, next) {
     const photo = typeof payload.picture === 'string' && payload.picture.startsWith('https://') ? payload.picture : null;
 
     const cree = await db.query(
-      `INSERT INTO users (nom, prenom, email, mot_de_passe_hash, compte_verifie, google_id, photo_profil_url)
-       VALUES ($1, $2, $3, $4, TRUE, $5, $6)
+      `INSERT INTO users (nom, prenom, email, mot_de_passe_hash, compte_verifie, google_id, photo_profil_url, conditions_acceptees_le)
+       VALUES ($1, $2, $3, $4, TRUE, $5, $6, NOW())
        RETURNING ${CHAMPS_UTILISATEUR}`,
       [nom, prenom, email, motDePasseInutilisable, googleId, photo]
     );
