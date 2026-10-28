@@ -15,6 +15,9 @@
         "backgroundColor": "#0A0A0A"
       }
     },
+    "web": {
+      "favicon": "./assets/favicon.png"
+       },
     "extra": {
       "eas": {
         "projectId": "REMPLACE_MOI_APRES_EAS_INIT"
