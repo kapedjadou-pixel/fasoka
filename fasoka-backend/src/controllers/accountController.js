@@ -10,10 +10,13 @@ const DELAI_RENVOI_SECONDES = 60;
 const TYPES_VALIDES = ['mot_de_passe', 'email'];
 
 // Champs du compte renvoyés à l'app (jamais le mot de passe ni les codes)
-const CHAMPS_UTILISATEUR = 'id, nom, prenom, email, telephone, compte_verifie, photo_profil_url, created_at';
+const CHAMPS_UTILISATEUR = 'id, nom, prenom, email, telephone, compte_verifie, photo_profil_url, conditions_acceptees_le, created_at';
 
 // ---------- Table des codes de confirmation (créée automatiquement au démarrage) ----------
 async function initialiserTables() {
+  // Date d'acceptation de la politique de confidentialité et des conditions d'utilisation (NULL = pas encore acceptées).
+  // En premier : toutes les requêtes sur les comptes lisent cette colonne.
+  await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS conditions_acceptees_le TIMESTAMP`);
   // Migration idempotente pour les bases créées avant le durcissement de la confirmation de compte :
   // le code est désormais stocké haché (bcrypt, 60 caractères) avec expiration et compteur d'essais.
   await db.query(`ALTER TABLE users ALTER COLUMN code_confirmation TYPE VARCHAR(255)`);
@@ -34,17 +37,17 @@ async function initialiserTables() {
   await db.query(
     `CREATE INDEX IF NOT EXISTS idx_verification_codes_user ON verification_codes(user_id, type)`
   );
-       // Autorise le type « reinitialisation » (mot de passe oublié) dans les bases déjà créées
-     await db.query(`ALTER TABLE verification_codes DROP CONSTRAINT IF EXISTS verification_codes_type_check`);
-     await db.query(
-       `ALTER TABLE verification_codes ADD CONSTRAINT verification_codes_type_check
-        CHECK (type IN ('mot_de_passe', 'email', 'reinitialisation'))`
-     );
-       // Connexion avec Google : identifiant Google du compte (unique quand il existe)
-     await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id VARCHAR(255)`);
-     await db.query(
-       `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id) WHERE google_id IS NOT NULL`
-     );
+  // Autorise le type « reinitialisation » (mot de passe oublié) dans les bases déjà créées
+  await db.query(`ALTER TABLE verification_codes DROP CONSTRAINT IF EXISTS verification_codes_type_check`);
+  await db.query(
+    `ALTER TABLE verification_codes ADD CONSTRAINT verification_codes_type_check
+     CHECK (type IN ('mot_de_passe', 'email', 'reinitialisation'))`
+  );
+  // Connexion avec Google : identifiant Google du compte (unique quand il existe)
+  await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id VARCHAR(255)`);
+  await db.query(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id) WHERE google_id IS NOT NULL`
+  );
 }
 
 // ---------- Utilitaires ----------
@@ -99,6 +102,23 @@ function notifierChangement({ to, prenom, message }) {
 async function getMe(req, res, next) {
   try {
     const result = await db.query(`SELECT ${CHAMPS_UTILISATEUR} FROM users WHERE id = $1`, [req.userId]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Compte introuvable.' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// POST /api/account/accept-conditions — enregistre l'acceptation de la politique de confidentialité
+// et des conditions d'utilisation (la date de la première acceptation est conservée)
+async function accepterConditions(req, res, next) {
+  try {
+    const result = await db.query(
+      `UPDATE users
+       SET conditions_acceptees_le = COALESCE(conditions_acceptees_le, NOW()), updated_at = NOW()
+       WHERE id = $1 RETURNING ${CHAMPS_UTILISATEUR}`,
+      [req.userId]
+    );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Compte introuvable.' });
     res.json(result.rows[0]);
   } catch (err) {
@@ -400,5 +420,5 @@ async function confirmerCode(req, res, next) {
 }
 
 module.exports = {
-  initialiserTables, getMe, updateProfile, uploadAvatar, deleteAvatar, demanderCode, confirmerCode,
+  initialiserTables, getMe, accepterConditions, updateProfile, uploadAvatar, deleteAvatar, demanderCode, confirmerCode,
 };
