@@ -10,6 +10,8 @@ import { useAuth } from '../../context/AuthContext';
 import { ApiClient, ApiException } from '../../api/apiClient';
 import HeroCarousel from '../../components/auth/HeroCarousel';
 import BoutonGoogle from '../../components/auth/BoutonGoogle';
+import CaseConditions, { LienLegal } from '../../components/auth/CaseConditions';
+import { LIENS } from '../../config/liens';
 
 const NATIF = Platform.OS !== 'web';
 const LARGEUR_DEUX_COLONNES = 900; // à partir de cette largeur : images animées à gauche, formulaire à droite
@@ -98,6 +100,7 @@ export default function LoginScreen({ modeInitial = 'connexion' }) {
   const [email, setEmail] = useState('');
   const [motDePasse, setMotDePasse] = useState('');
   const [code, setCode] = useState('');
+  const [accepteConditions, setAccepteConditions] = useState(false);
   const [chargement, setChargement] = useState(false);
   const [erreur, setErreur] = useState(null);
   const [info, setInfo] = useState(null);
@@ -241,6 +244,10 @@ export default function LoginScreen({ modeInitial = 'connexion' }) {
         setErreur('Le mot de passe doit contenir au moins 8 caractères.');
         return;
       }
+      if (!accepteConditions) {
+        setErreur("Pour créer votre compte, vous devez accepter la politique de confidentialité et les conditions d'utilisation.");
+        return;
+      }
     }
 
     setChargement(true);
@@ -248,7 +255,7 @@ export default function LoginScreen({ modeInitial = 'connexion' }) {
       if (estConnexion) {
         await connexion({ identifiant: identifiant.trim(), motDePasse });
       } else {
-        await inscription({ nom: nom.trim(), prenom: prenom.trim(), email: email.trim(), motDePasse });
+        await inscription({ nom: nom.trim(), prenom: prenom.trim(), email: email.trim(), motDePasse, accepteConditions });
       }
       // La navigation racine bascule automatiquement une fois `user` défini (voir App.js)
     } catch (e) {
@@ -294,6 +301,10 @@ export default function LoginScreen({ modeInitial = 'connexion' }) {
       {!estOubli && Platform.OS === 'web' ? (
         <>
           <BoutonGoogle onCredential={connecterGoogle} />
+          <Text style={styles.mentionLegale}>
+            En continuant avec Google, vous acceptez la <LienLegal url={LIENS.confidentialite}>politique de confidentialité</LienLegal> et
+            les <LienLegal url={LIENS.conditions}>conditions d'utilisation</LienLegal>.
+          </Text>
           <View style={styles.separateur}>
             <View style={styles.separateurTrait} />
             <Text style={styles.separateurTexte}>ou avec votre email</Text>
@@ -425,6 +436,8 @@ export default function LoginScreen({ modeInitial = 'connexion' }) {
             returnKeyType="go"
             onSubmitEditing={valider}
           />
+
+          <CaseConditions accepte={accepteConditions} onChange={setAccepteConditions} />
         </>
       )}
 
@@ -442,7 +455,7 @@ export default function LoginScreen({ modeInitial = 'connexion' }) {
         </View>
       ) : null}
 
-              {estOubli && etapeOubli === 2 ? (
+      {estOubli && etapeOubli === 2 ? (
         <View style={styles.astuceBloc}>
           <Ionicons name="mail-unread-outline" size={18} color={COLORS.orFonce} style={{ marginRight: 8 }} />
           <Text style={styles.astuceTexte}>
@@ -450,7 +463,7 @@ export default function LoginScreen({ modeInitial = 'connexion' }) {
           </Text>
         </View>
       ) : null}
-        
+
       <TouchableOpacity style={[styles.bouton, chargement && { opacity: 0.7 }]} onPress={valider} disabled={chargement} activeOpacity={0.85}>
         {chargement ? (
           <ActivityIndicator color={COLORS.noir} />
@@ -613,7 +626,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   infoTexte: { flex: 1, color: '#1B5E20', fontSize: 13, lineHeight: 18 },
-    astuceBloc: {
+  astuceBloc: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFF6DB',
@@ -627,4 +640,6 @@ const styles = StyleSheet.create({
   separateur: { flexDirection: 'row', alignItems: 'center', marginTop: 14, marginBottom: 18 },
   separateurTrait: { flex: 1, height: 1, backgroundColor: '#E6E2D8' },
   separateurTexte: { marginHorizontal: 12, fontSize: 12.5, color: COLORS.gris },
+
+  mentionLegale: { fontSize: 11.5, color: COLORS.gris, textAlign: 'center', lineHeight: 16, marginTop: 8 },
 });
