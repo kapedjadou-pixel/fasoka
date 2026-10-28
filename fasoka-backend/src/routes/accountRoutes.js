@@ -3,11 +3,13 @@ const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
 const upload = require('../middleware/upload');
 const {
-  getMe, updateProfile, uploadAvatar, deleteAvatar, demanderCode, confirmerCode,
+  getMe, accepterConditions, updateProfile, uploadAvatar, deleteAvatar, demanderCode, confirmerCode,
 } = require('../controllers/accountController');
 
 // Profil
 router.get('/me', requireAuth, getMe);
+// Acceptation de la politique de confidentialité et des conditions d'utilisation
+router.post('/accept-conditions', requireAuth, accepterConditions);
 router.patch('/profile', requireAuth, updateProfile);
 
 // Photo de profil (champ multipart attendu : "image")
