@@ -10,6 +10,7 @@ import { useAuth } from '../../context/AuthContext';
 import { ApiClient, ApiException } from '../../api/apiClient';
 import EditProfileScreen from './EditProfileScreen';
 import SecurityScreen from './SecurityScreen';
+import AProposScreen from './AProposScreen';
 
 // Fait en sorte que le bouton Retour (navigateur ou téléphone) ferme la sous-page ouverte
 // au lieu de quitter l'application.
@@ -73,7 +74,7 @@ function LigneMenu({ libelle, icone, onPress, derniere }) {
 
 export default function ProfileScreen() {
   const { user, deconnexion, mettreAJourUtilisateur } = useAuth();
-  const [vue, setVue] = useState('accueil'); // 'accueil' | 'modifier' | 'securite'
+  const [vue, setVue] = useState('accueil'); // 'accueil' | 'modifier' | 'securite' | 'apropos'
   const [envoiPhoto, setEnvoiPhoto] = useState(false);
   const [erreurPhoto, setErreurPhoto] = useState(null);
 
@@ -117,6 +118,7 @@ export default function ProfileScreen() {
 
   if (vue === 'modifier') return <EditProfileScreen onRetour={() => setVue('accueil')} />;
   if (vue === 'securite') return <SecurityScreen onRetour={() => setVue('accueil')} />;
+  if (vue === 'apropos') return <AProposScreen onRetour={() => setVue('accueil')} />;
 
   const lettre = user && user.prenom ? user.prenom.charAt(0).toUpperCase() : '?';
 
@@ -155,7 +157,8 @@ export default function ProfileScreen() {
         <LigneMenu libelle="Mes favoris" icone="heart-outline" />
         <LigneMenu libelle="Sécurité" icone="shield-checkmark-outline" onPress={() => setVue('securite')} />
         <LigneMenu libelle="Notifications" icone="notifications-outline" />
-        <LigneMenu libelle="Aide" icone="help-circle-outline" derniere />
+        <LigneMenu libelle="Aide" icone="help-circle-outline" />
+        <LigneMenu libelle="À propos" icone="information-circle-outline" onPress={() => setVue('apropos')} derniere />
       </View>
 
       <TouchableOpacity onPress={deconnexion} style={{ marginTop: 20 }}>
