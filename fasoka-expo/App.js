@@ -12,6 +12,7 @@ import { ApiClient } from './src/api/apiClient';
 
 import LoginScreen from './src/screens/auth/LoginScreen';
 import SignupScreen from './src/screens/auth/SignupScreen';
+import ConditionsScreen from './src/screens/auth/ConditionsScreen';
 import ShopCreationScreen from './src/screens/boutique/ShopCreationScreen';
 import ClientTabs from './src/navigation/ClientTabs';
 import BoutiqueTabs from './src/navigation/BoutiqueTabs';
@@ -58,6 +59,9 @@ function RacineApp() {
   }
 
   if (!user) return <EcranAuth />;
+
+  // Comptes existants : il faut accepter la politique de confidentialité et les conditions d'utilisation pour continuer
+  if (user.conditions_acceptees_le === null) return <ConditionsScreen />;
 
   if (espaceActif === 'creation-boutique') {
     return <ShopCreationScreen onCree={() => setEspaceActif('boutique')} />;
