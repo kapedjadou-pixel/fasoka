@@ -3,18 +3,20 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { COLORS } from '../theme/colors';
 import { useSpace } from '../context/SpaceContext';
+import { useMessagerie } from '../context/MessagerieContext';
 import SpaceSwitcher from '../components/SpaceSwitcher';
 import { IconeOnglet } from '../components/IconesOnglets';
 import BoutiqueDashboardScreen from '../screens/boutique/BoutiqueDashboardScreen';
 import CatalogScreen from '../screens/boutique/CatalogScreen';
 import OrdersScreen from '../screens/boutique/OrdersScreen';
+import BoutiqueMessagesScreen from '../screens/boutique/BoutiqueMessagesScreen';
 import ProductGalleryScreen from '../screens/boutique/ProductGalleryScreen';
 
 const Tab = createBottomTabNavigator();
 const CatalogStack = createNativeStackNavigator();
 
 // Noms de base des icônes Ionicons (version contour quand inactif, version pleine quand actif)
-const ICONES = { 'Tableau de bord': 'stats-chart', Catalogue: 'pricetags', Commandes: 'bag-check' };
+const ICONES = { 'Tableau de bord': 'stats-chart', Catalogue: 'pricetags', Commandes: 'bag-check', Messages: 'chatbubbles' };
 
 // Le catalogue a besoin de sa propre pile de navigation pour pouvoir ouvrir la galerie photos
 function CatalogStackScreen() {
@@ -32,6 +34,8 @@ function CatalogStackScreen() {
 
 export default function BoutiqueTabs({ onSelectClient }) {
   const { maBoutique } = useSpace();
+  const { nonLusBoutique } = useMessagerie();
+  const nonLus = maBoutique ? nonLusBoutique(maBoutique.id) : 0;
 
   return (
     <Tab.Navigator
@@ -51,6 +55,11 @@ export default function BoutiqueTabs({ onSelectClient }) {
       <Tab.Screen name="Tableau de bord" component={BoutiqueDashboardScreen} />
       <Tab.Screen name="Catalogue" component={CatalogStackScreen} options={{ headerShown: false }} />
       <Tab.Screen name="Commandes" component={OrdersScreen} />
+      <Tab.Screen
+        name="Messages"
+        component={BoutiqueMessagesScreen}
+        options={{ tabBarBadge: nonLus > 0 ? nonLus : undefined }}
+      />
     </Tab.Navigator>
   );
 }
