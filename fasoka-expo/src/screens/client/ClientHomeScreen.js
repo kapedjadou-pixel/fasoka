@@ -8,6 +8,7 @@ import { COLORS } from '../../theme/colors';
 import { ApiClient } from '../../api/apiClient';
 import { useCart } from '../../context/CartContext';
 import { useAuth } from '../../context/AuthContext';
+import { useSpace } from '../../context/SpaceContext';
 
 const LARGEUR_MAX = 1200; // largeur maximale du contenu sur grand écran
 const ECART = 10; // espace entre les cartes
@@ -39,9 +40,11 @@ function prenomAffichable(user) {
 function nouvelleGraine() {
   return Math.random().toString(36).slice(2, 12) + Date.now().toString(36);
 }
+
 export default function ClientHomeScreen({ navigation }) {
   const { ajouter } = useCart();
   const { user } = useAuth();
+  const { maBoutique } = useSpace();
   const { width } = useWindowDimensions();
   const [produits, setProduits] = useState([]);
   const [recherche, setRecherche] = useState(''); // texte tapé dans la barre de recherche
@@ -50,10 +53,10 @@ export default function ClientHomeScreen({ navigation }) {
   const [erreur, setErreur] = useState(null);
   const [dernierAjout, setDernierAjout] = useState(null);
   const entreeHistorique = useRef(false); // vrai si une entrée a été ajoutée à l'historique du navigateur
-
-    // Une graine par visite : l'ordre des produits change à chaque ouverture de l'app / chargement de la page,
+  // Une graine par visite : l'ordre des produits change à chaque ouverture de l'app / chargement de la page,
   // mais reste identique pendant la visite (retour d'une recherche, changement d'onglet).
   const graine = useRef(nouvelleGraine());
+
   const largeurContenu = Math.min(width, LARGEUR_MAX);
   const colonnes = nombreColonnes(largeurContenu);
   // Largeur fixe calculée pour chaque carte : une carte seule ne s'étire plus sur toute la ligne
@@ -63,7 +66,7 @@ export default function ClientHomeScreen({ navigation }) {
     setChargement(true);
     setErreur(null);
     try {
-            const data = await ApiClient.get('/products/feed', texte
+      const data = await ApiClient.get('/products/feed', texte
         ? { recherche: texte, seed: graine.current }
         : { seed: graine.current });
       setProduits(data);
@@ -147,6 +150,13 @@ export default function ClientHomeScreen({ navigation }) {
     setTimeout(() => setDernierAjout(null), 1200);
   }
 
+  // Ouvre une discussion avec la boutique du produit (onglet Messages), avec un message proposé
+  function contacterBoutique(produit) {
+    navigation.navigate('Messages', {
+      ouvrir: { shop_id: produit.shop_id, produit_nom: produit.nom, cle: Date.now() },
+    });
+  }
+
   function carteProduit({ item }) {
     const stock = Number(item.stock_quantite) || 0;
     const rupture = stock <= 0;
@@ -177,6 +187,17 @@ export default function ClientHomeScreen({ navigation }) {
               <Ionicons name="checkmark-circle" size={13} color="#2563EB" style={{ marginRight: 3 }} />
             ) : null}
             <Text numberOfLines={1} style={styles.boutique}>{item.nom_boutique}</Text>
+            {!maBoutique || maBoutique.id !== item.shop_id ? (
+              <TouchableOpacity
+                onPress={() => contacterBoutique(item)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                style={styles.boutonContact}
+                accessibilityRole="button"
+                accessibilityLabel={`Contacter la boutique ${item.nom_boutique}`}
+              >
+                <Ionicons name="chatbubble-ellipses-outline" size={16} color={COLORS.orFonce} />
+              </TouchableOpacity>
+            ) : null}
           </View>
           {item.ville ? (
             <View style={styles.ligneVille}>
@@ -317,6 +338,7 @@ const styles = StyleSheet.create({
   prix: { fontSize: 16, fontWeight: '800', color: COLORS.rouge, marginTop: 4 },
   ligneBoutique: { flexDirection: 'row', alignItems: 'center', marginTop: 6 },
   boutique: { fontSize: 11, color: COLORS.gris, flexShrink: 1 },
+  boutonContact: { marginLeft: 6 },
   ligneVille: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
   ville: { fontSize: 11, color: COLORS.gris, marginLeft: 3, flexShrink: 1 },
   stockFaible: { fontSize: 11, color: COLORS.rouge, marginTop: 4, fontWeight: '600' },
