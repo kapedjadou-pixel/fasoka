@@ -13,7 +13,9 @@ const shopRoutes = require('./routes/shopRoutes');
 const productRoutes = require('./routes/productRoutes');
 const orderRoutes = require('./routes/orderRoutes');
 const accountRoutes = require('./routes/accountRoutes');
+const messagerieRoutes = require('./routes/messagerieRoutes');
 const { initialiserTables } = require('./controllers/accountController');
+const { initialiserMessagerie } = require('./controllers/messagerieController');
 const errorHandler = require('./middleware/errorHandler');
 
 const app = express();
@@ -33,6 +35,8 @@ app.use(express.json({ limit: '100kb' }));
 app.use('/api', rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 600,
+  // La messagerie (actualisation toutes les quelques secondes) a ses propres limites, par personne connectée
+  skip: (req) => req.path.startsWith('/messagerie'),
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Trop de requêtes. Réessaie dans quelques minutes.' },
@@ -75,6 +79,7 @@ app.use('/api/shops', shopRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/account', accountRoutes);
+app.use('/api/messagerie', messagerieRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', service: 'fasoka-backend' });
@@ -94,6 +99,10 @@ app.listen(PORT, () => {
   // Crée/met à jour les tables annexes (codes de confirmation) si nécessaire
   initialiserTables().catch((err) =>
     console.error('Initialisation des tables impossible :', err.message)
+  );
+  // Tables de la messagerie (conversations et messages)
+  initialiserMessagerie().catch((err) =>
+    console.error('Initialisation de la messagerie impossible :', err.message)
   );
 });
 
