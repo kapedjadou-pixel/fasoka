@@ -5,11 +5,13 @@ import { CommonActions } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { COLORS } from '../theme/colors';
 import { useCart } from '../context/CartContext';
+import { useMessagerie } from '../context/MessagerieContext';
 import SpaceSwitcher from '../components/SpaceSwitcher';
 import { IconePastille, IconeProfil } from '../components/IconesOnglets';
 import ClientHomeScreen from '../screens/client/ClientHomeScreen';
 import CartScreen from '../screens/client/CartScreen';
 import HistoryScreen from '../screens/client/HistoryScreen';
+import MessagesScreen from '../screens/client/MessagesScreen';
 import ProfileScreen from '../screens/client/ProfileScreen';
 
 const Tab = createBottomTabNavigator();
@@ -18,7 +20,7 @@ const Tab = createBottomTabNavigator();
 const COULEUR_BARRE = COLORS.blanc;
 
 // Noms de base des icônes Ionicons (l'onglet Profil affiche la photo du client, voir IconesOnglets.js)
-const ICONES = { Accueil: 'storefront', Panier: 'cart', Historique: 'receipt' };
+const ICONES = { Accueil: 'storefront', Messages: 'chatbubbles', Panier: 'cart', Historique: 'receipt' };
 
 const COULEUR_LIBELLE_REPOS = '#6B6B6B'; // gris foncé : lisible sur fond blanc
 
@@ -205,6 +207,7 @@ const styles = StyleSheet.create({
 
 export default function ClientTabs({ onSelectBoutique }) {
   const { nombreArticles } = useCart();
+  const { nonLusClient } = useMessagerie();
 
   return (
     <>
@@ -220,15 +223,23 @@ export default function ClientTabs({ onSelectBoutique }) {
         headerRight: () => (
           <SpaceSwitcher couleur={COLORS.noir} onSelectClient={() => {}} onSelectBoutique={onSelectBoutique} />
         ),
-        // Compteur du panier : valeur réelle (nombre d'articles), affichée par la barre personnalisée
-        tabBarBadge: route.name === 'Panier' && nombreArticles > 0 ? nombreArticles : undefined,
+        // Compteurs : nombre d'articles du panier, messages non lus (valeurs réelles, affichées par la barre personnalisée)
+        tabBarBadge:
+          route.name === 'Panier' && nombreArticles > 0
+            ? nombreArticles
+            : route.name === 'Messages' && nonLusClient > 0
+              ? nonLusClient
+              : undefined,
         tabBarAccessibilityLabel:
           route.name === 'Panier' && nombreArticles > 0
             ? 'Panier, ' + nombreArticles + (nombreArticles > 1 ? ' articles' : ' article')
-            : undefined,
+            : route.name === 'Messages' && nonLusClient > 0
+              ? 'Messages, ' + nonLusClient + (nonLusClient > 1 ? ' non lus' : ' non lu')
+              : undefined,
       })}
     >
       <Tab.Screen name="Accueil" component={ClientHomeScreen} />
+      <Tab.Screen name="Messages" component={MessagesScreen} />
       <Tab.Screen name="Panier" component={CartScreen} />
       <Tab.Screen name="Historique" component={HistoryScreen} />
       <Tab.Screen name="Profil" component={ProfileScreen} />
