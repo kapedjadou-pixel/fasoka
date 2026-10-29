@@ -13,6 +13,7 @@ import { ApiClient } from './src/api/apiClient';
 import LoginScreen from './src/screens/auth/LoginScreen';
 import SignupScreen from './src/screens/auth/SignupScreen';
 import ConditionsScreen from './src/screens/auth/ConditionsScreen';
+import { MessagerieProvider } from './src/context/MessagerieContext';
 import ShopCreationScreen from './src/screens/boutique/ShopCreationScreen';
 import ClientTabs from './src/navigation/ClientTabs';
 import BoutiqueTabs from './src/navigation/BoutiqueTabs';
@@ -84,10 +85,12 @@ export default function App() {
       <AuthProvider>
         <SpaceProvider>
           <CartProvider>
-            <NavigationContainer>
-              <StatusBar style="light" backgroundColor={COLORS.noir} />
-              <RacineApp />
-            </NavigationContainer>
+            <MessagerieProvider>
+              <NavigationContainer>
+                <StatusBar style="light" backgroundColor={COLORS.noir} />
+                <RacineApp />
+              </NavigationContainer>
+            </MessagerieProvider>
           </CartProvider>
         </SpaceProvider>
       </AuthProvider>
