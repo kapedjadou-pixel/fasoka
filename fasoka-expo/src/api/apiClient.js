@@ -33,10 +33,10 @@ async function headers() {
   };
 }
 
-// fetch avec délai maximal, et messages d'erreur compréhensibles pour l'utilisateur
-async function requete(url, options) {
+// fetch avec délai maximal (modifiable : l'envoi d'un fichier peut être long), et messages d'erreur compréhensibles
+async function requete(url, options, delaiMs = DELAI_MAX_MS) {
   const controleur = new AbortController();
-  const minuteur = setTimeout(() => controleur.abort(), DELAI_MAX_MS);
+  const minuteur = setTimeout(() => controleur.abort(), delaiMs);
   try {
     return await fetch(url, { ...options, signal: controleur.signal });
   } catch (e) {
@@ -99,6 +99,34 @@ export const ApiClient = {
       method: 'DELETE',
       headers: await headers(),
     });
+    return handle(response);
+  },
+
+  // Envoie un fichier (photo, vocal, document) avec des champs texte ; `fichier` = { uri, name, type, file? }
+  async uploadFichier(path, champs, fichier) {
+    const token = await getToken();
+    const formData = new FormData();
+    // Les champs texte d'abord, le fichier en dernier
+    Object.entries(champs || {}).forEach(([cle, valeur]) => {
+      if (valeur !== undefined && valeur !== null) formData.append(cle, String(valeur));
+    });
+
+    if (Platform.OS === 'web') {
+      const contenu = fichier.file || (await (await fetch(fichier.uri)).blob());
+      formData.append('fichier', contenu, fichier.name || 'fichier');
+    } else {
+      formData.append('fichier', {
+        uri: fichier.uri,
+        name: fichier.name || 'fichier',
+        type: fichier.type || 'application/octet-stream',
+      });
+    }
+
+    const response = await requete(
+      `${API_BASE_URL}${path}`,
+      { method: 'POST', headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: formData },
+      180000
+    );
     return handle(response);
   },
 
