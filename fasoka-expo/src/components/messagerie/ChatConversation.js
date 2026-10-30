@@ -4,17 +4,39 @@ import {
   KeyboardAvoidingView, Platform, StyleSheet,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS } from '../../theme/colors';
 import { ApiClient, ApiException } from '../../api/apiClient';
 import useActualisation from '../../hooks/useActualisation';
+import useEnregistreurVocal from '../../hooks/useEnregistreurVocal';
 import { useMessagerie } from '../../context/MessagerieContext';
 import Avatar from './Avatar';
-import { heureCourte, libelleJour, jourDe } from './formatage';
+import BulleMessage from './BulleMessage';
+import VisionneusePhoto from './VisionneusePhoto';
+import { libelleJour, jourDe, libelleVu, dureeLisible } from './formatage';
 
 const LONGUEUR_MAX = 2000;
+const TAILLE_MAX_FICHIER = 10 * 1024 * 1024; // 10 Mo, comme sur le serveur
 const HAUTEUR_SAISIE_MIN = 40;
 const HAUTEUR_SAISIE_MAX = 120;
+const VERT_EN_LIGNE = '#1E9E4A';
+
+const TYPES_DOCUMENTS = [
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/vnd.oasis.opendocument.text',
+  'application/vnd.oasis.opendocument.spreadsheet',
+  'application/rtf',
+  'text/plain',
+  'text/csv',
+];
 
 // Les messages enregistrés ont un numéro (nombre) ; ceux en cours d'envoi ont un identifiant temporaire (texte).
 function trier(liste) {
@@ -30,10 +52,24 @@ function fusionner(existants, recus) {
   return nouveaux.length === 0 ? existants : trier([...existants, ...nouveaux]);
 }
 
-// Une discussion : messages, saisie et envoi.
+// Coches de mes messages : envoi en cours, échec, envoyé, reçu, lu
+function statutDe(m, pointeurs) {
+  if (m.echec) return 'echec';
+  if (m.envoi) return 'attente';
+  if (m.id <= pointeurs.lu) return 'lu';
+  if (m.id <= pointeurs.recu) return 'recu';
+  return 'envoye';
+}
+
+function nomParDefaut(uri, secours) {
+  const nom = String(uri || '').split('?')[0].split('/').pop();
+  return nom && nom.includes('.') ? nom : secours;
+}
+
+// Une discussion : messages, photos, vocaux, documents, coches (envoyé / reçu / lu) et présence (« en ligne »).
 // `cote` : 'client' ou 'boutique' (de quel côté de la conversation on se trouve).
 // `conversation` : { id, titre, avatar }. `brouillon` : texte pré-rempli dans la zone de saisie (non envoyé).
-// `actif` : vrai quand l'écran est affiché ; les nouveaux messages sont récupérés toutes les 4 secondes.
+// `actif` : vrai quand l'écran est affiché ; les nouveautés sont récupérées toutes les 4 secondes.
 export default function ChatConversation({ conversation, cote, onRetour, brouillon = '', actif = true }) {
   const insets = useSafeAreaInsets();
   const { rafraichirNonLus } = useMessagerie();
@@ -45,12 +81,20 @@ export default function ChatConversation({ conversation, cote, onRetour, brouill
   const [chargementPlus, setChargementPlus] = useState(false);
   const [texte, setTexte] = useState(brouillon);
   const [hauteurSaisie, setHauteurSaisie] = useState(HAUTEUR_SAISIE_MIN);
+  const [presence, setPresence] = useState(null); // { en_ligne, vu_le } de l'autre côté
+  const [pointeurs, setPointeurs] = useState({ lu: 0, recu: 0 }); // jusqu'où l'autre côté a reçu / lu
+  const [ecrit, setEcrit] = useState(null); // null | 'texte' | 'audio' : l'autre côté écrit ou enregistre
+  const [menuOuvert, setMenuOuvert] = useState(false);
+  const [photoOuverte, setPhotoOuverte] = useState(null);
+  const [alerte, setAlerte] = useState(null);
 
   const liste = useRef(null);
   const suivreFin = useRef(true); // vrai tant que la personne lit le bas de la discussion : on suit les nouveaux messages
   const dernierId = useRef(0);
+  const dernierSignal = useRef(0);
 
-  const chemin = `/messagerie/conversations/${conversation.id}/messages`;
+  const chemin = `/messagerie/conversations/${conversation.id}`;
+  const enregistreur = useEnregistreurVocal({ surDureeMax: () => envoyerVocal() });
 
   // Numéro du dernier message enregistré : sert à ne demander au serveur que les nouveautés
   useEffect(() => {
@@ -61,11 +105,19 @@ export default function ChatConversation({ conversation, cote, onRetour, brouill
   const messageErreur = (e) =>
     e instanceof ApiException ? e.message : 'Connexion instable. Nous réessayons automatiquement.';
 
+  // Présence, coches et « écrit… » de l'autre côté : renvoyés à chaque actualisation
+  function appliquerEtatAutreCote(donnees) {
+    if (donnees.presence) setPresence(donnees.presence);
+    if (donnees.pointeurs) setPointeurs(donnees.pointeurs);
+    setEcrit(donnees.ecrit || null);
+  }
+
   const chargerDerniers = useCallback(async () => {
     try {
-      const donnees = await ApiClient.get(chemin, { cote });
+      const donnees = await ApiClient.get(`${chemin}/messages`, { cote });
       setMessages((prec) => fusionner(prec, donnees.messages));
       setPlus(donnees.il_y_en_a_plus);
+      appliquerEtatAutreCote(donnees);
       setErreur(null);
       rafraichirNonLus();
     } catch (e) {
@@ -83,11 +135,12 @@ export default function ChatConversation({ conversation, cote, onRetour, brouill
       return;
     }
     try {
-      const donnees = await ApiClient.get(chemin, { cote, apres: String(apres) });
+      const donnees = await ApiClient.get(`${chemin}/messages`, { cote, apres: String(apres) });
       if (donnees.messages.length > 0) {
         setMessages((prec) => fusionner(prec, donnees.messages));
         if (donnees.messages.some((m) => !m.est_moi)) rafraichirNonLus();
       }
+      appliquerEtatAutreCote(donnees);
       setErreur(null);
     } catch (e) {
       setErreur(messageErreur(e));
@@ -102,7 +155,7 @@ export default function ChatConversation({ conversation, cote, onRetour, brouill
     setChargementPlus(true);
     suivreFin.current = false;
     try {
-      const donnees = await ApiClient.get(chemin, { cote, avant: String(premier.id) });
+      const donnees = await ApiClient.get(`${chemin}/messages`, { cote, avant: String(premier.id) });
       setMessages((prec) => fusionner(prec, donnees.messages));
       setPlus(donnees.il_y_en_a_plus);
     } catch (e) {
@@ -112,7 +165,22 @@ export default function ChatConversation({ conversation, cote, onRetour, brouill
     }
   }
 
-  // Envoi « optimiste » : le message apparaît tout de suite, puis est confirmé par le serveur.
+  // Prévient l'autre côté qu'on écrit (ou qu'on enregistre un vocal) : « est en train d'écrire… »
+  function signaler(genre) {
+    const maintenant = Date.now();
+    if (maintenant - dernierSignal.current < 2500) return;
+    dernierSignal.current = maintenant;
+    ApiClient.post(`${chemin}/ecriture`, { cote, genre }).catch(() => {});
+  }
+
+  useEffect(() => {
+    if (!enregistreur.actif) return undefined;
+    signaler('audio');
+    const minuteur = setInterval(() => signaler('audio'), 3000);
+    return () => clearInterval(minuteur);
+  }, [enregistreur.actif]);
+
+  // Envoi « optimiste » d'un texte : le message apparaît tout de suite, puis est confirmé par le serveur.
   // En cas d'échec il reste affiché avec « Non envoyé » : toucher le message pour réessayer.
   async function envoyer(contenuBrut, idExistant) {
     const contenu = String(contenuBrut).trim();
@@ -121,20 +189,49 @@ export default function ChatConversation({ conversation, cote, onRetour, brouill
     suivreFin.current = true;
     setMessages((prec) => [
       ...prec.filter((m) => m.id !== idTemporaire),
-      { id: idTemporaire, expediteur: cote, contenu, est_moi: true, created_at: new Date().toISOString(), envoi: true },
+      { id: idTemporaire, type: 'texte', expediteur: cote, contenu, est_moi: true, created_at: new Date().toISOString(), envoi: true },
     ]);
     try {
-      const enregistre = await ApiClient.post(chemin, { cote, contenu });
+      const enregistre = await ApiClient.post(`${chemin}/messages`, { cote, contenu });
       setMessages((prec) => fusionner(prec.filter((m) => m.id !== idTemporaire), [enregistre]));
     } catch (e) {
-      setMessages((prec) =>
-        prec.map((m) =>
-          m.id === idTemporaire
-            ? { ...m, envoi: false, echec: true, messageEchec: e instanceof ApiException ? e.message : "L'envoi a échoué." }
-            : m
-        )
-      );
+      marquerEchec(idTemporaire, e);
     }
+  }
+
+  // Envoi d'une photo, d'un vocal ou d'un document (même principe : affiché tout de suite, confirmé ensuite)
+  async function envoyerFichier(fichier, type, duree, idExistant) {
+    const idTemporaire = idExistant || 'tmp-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+    suivreFin.current = true;
+    setMessages((prec) => [
+      ...prec.filter((m) => m.id !== idTemporaire),
+      {
+        id: idTemporaire, type, expediteur: cote, contenu: '', est_moi: true, created_at: new Date().toISOString(),
+        envoi: true, uriLocale: fichier.uri, nom_fichier: fichier.name, taille_octets: fichier.taille || null,
+        duree_secondes: duree || null, fichierLocal: fichier,
+      },
+    ]);
+    try {
+      const enregistre = await ApiClient.uploadFichier(`${chemin}/pieces-jointes`, { cote, duree }, fichier);
+      setMessages((prec) => fusionner(prec.filter((m) => m.id !== idTemporaire), [enregistre]));
+    } catch (e) {
+      marquerEchec(idTemporaire, e);
+    }
+  }
+
+  function marquerEchec(idTemporaire, e) {
+    setMessages((prec) =>
+      prec.map((m) =>
+        m.id === idTemporaire
+          ? { ...m, envoi: false, echec: true, messageEchec: e instanceof ApiException ? e.message : "L'envoi a échoué." }
+          : m
+      )
+    );
+  }
+
+  function reessayer(m) {
+    if (m.fichierLocal) envoyerFichier(m.fichierLocal, m.type, m.duree_secondes, m.id);
+    else envoyer(m.contenu, m.id);
   }
 
   function surEnvoi() {
@@ -151,6 +248,77 @@ export default function ChatConversation({ conversation, cote, onRetour, brouill
       e.preventDefault();
       surEnvoi();
     }
+  }
+
+  // ---------- Photos, documents, vocaux ----------
+  async function choisirPhoto(source) {
+    setMenuOuvert(false);
+    setAlerte(null);
+    try {
+      let resultat;
+      if (source === 'camera') {
+        const permission = await ImagePicker.requestCameraPermissionsAsync();
+        if (!permission.granted) {
+          setAlerte("Autorisez l'appareil photo pour prendre une photo.");
+          return;
+        }
+        resultat = await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.7 });
+      } else {
+        resultat = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.7 });
+      }
+      if (resultat.canceled || !resultat.assets || !resultat.assets[0]) return;
+      const a = resultat.assets[0];
+      if (a.fileSize && a.fileSize > TAILLE_MAX_FICHIER) {
+        setAlerte('Cette photo est trop lourde (10 Mo maximum).');
+        return;
+      }
+      envoyerFichier(
+        { uri: a.uri, name: a.fileName || nomParDefaut(a.uri, 'photo.jpg'), type: a.mimeType || 'image/jpeg', file: a.file, taille: a.fileSize },
+        'image'
+      );
+    } catch (e) {
+      setAlerte("Impossible d'ouvrir les photos.");
+    }
+  }
+
+  async function choisirDocument() {
+    setMenuOuvert(false);
+    setAlerte(null);
+    try {
+      const resultat = await DocumentPicker.getDocumentAsync({ type: TYPES_DOCUMENTS, copyToCacheDirectory: true });
+      if (resultat.canceled || !resultat.assets || !resultat.assets[0]) return;
+      const a = resultat.assets[0];
+      if (a.size && a.size > TAILLE_MAX_FICHIER) {
+        setAlerte('Ce document est trop lourd (10 Mo maximum).');
+        return;
+      }
+      envoyerFichier(
+        { uri: a.uri, name: a.name || 'document', type: a.mimeType || 'application/octet-stream', file: a.file, taille: a.size },
+        'document'
+      );
+    } catch (e) {
+      setAlerte("Impossible d'ouvrir les documents.");
+    }
+  }
+
+  async function demarrerVocal() {
+    setMenuOuvert(false);
+    setAlerte(null);
+    await enregistreur.demarrer();
+  }
+
+  async function envoyerVocal() {
+    const resultat = await enregistreur.terminer();
+    if (!resultat) {
+      setAlerte("L'enregistrement a échoué. Réessayez.");
+      return;
+    }
+    const web = Platform.OS === 'web';
+    envoyerFichier(
+      { uri: resultat.uri, name: web ? 'vocal.webm' : 'vocal.m4a', type: web ? 'audio/webm' : 'audio/mp4' },
+      'audio',
+      resultat.duree
+    );
   }
 
   // Messages + séparateurs de jour
@@ -178,27 +346,20 @@ export default function ChatConversation({ conversation, cote, onRetour, brouill
     }
     const m = item.m;
     return (
-      <View style={[styles.ligneMessage, m.est_moi ? styles.alignDroite : styles.alignGauche]}>
-        <TouchableOpacity
-          activeOpacity={m.echec ? 0.7 : 1}
-          disabled={!m.echec}
-          onPress={() => envoyer(m.contenu, m.id)}
-          style={[
-            styles.bulle,
-            m.est_moi ? styles.bulleMoi : styles.bulleAutre,
-            m.envoi && { opacity: 0.6 },
-            m.echec && styles.bulleEchec,
-          ]}
-        >
-          <Text selectable style={styles.texteMessage}>{m.contenu}</Text>
-          <Text style={styles.heureMessage}>{m.echec ? 'Non envoyé' : m.envoi ? 'Envoi…' : heureCourte(m.created_at)}</Text>
-        </TouchableOpacity>
-        {m.echec ? <Text style={styles.erreurMessage}>{m.messageEchec} Touchez le message pour réessayer.</Text> : null}
-      </View>
+      <BulleMessage
+        m={m}
+        statut={m.est_moi ? statutDe(m, pointeurs) : null}
+        onReessayer={reessayer}
+        onOuvrirPhoto={setPhotoOuverte}
+      />
     );
   }
 
   const peutEnvoyer = texte.trim().length > 0;
+  const messageAlerte = alerte || enregistreur.erreur;
+  const sousTitre =
+    ecrit === 'audio' ? 'enregistre un message vocal…' : ecrit === 'texte' ? "est en train d'écrire…" : libelleVu(presence);
+  const sousTitreVert = Boolean(ecrit) || Boolean(presence && presence.en_ligne);
 
   return (
     <KeyboardAvoidingView
@@ -216,14 +377,32 @@ export default function ChatConversation({ conversation, cote, onRetour, brouill
         >
           <Ionicons name="chevron-back" size={26} color={COLORS.noir} />
         </TouchableOpacity>
-        <Avatar uri={conversation.avatar} nom={conversation.titre} taille={36} />
-        <Text numberOfLines={1} style={styles.enteteTitre}>{conversation.titre}</Text>
+        <Avatar uri={conversation.avatar} nom={conversation.titre} taille={38} />
+        <View style={styles.enteteTextes}>
+          <Text numberOfLines={1} style={styles.enteteTitre}>{conversation.titre}</Text>
+          {sousTitre ? (
+            <Text numberOfLines={1} style={[styles.enteteSousTitre, sousTitreVert && { color: VERT_EN_LIGNE, fontWeight: '600' }]}>
+              {sousTitre}
+            </Text>
+          ) : null}
+        </View>
       </View>
 
       {erreur ? (
         <View style={styles.bandeauErreur}>
           <Text style={styles.bandeauErreurTexte}>{erreur}</Text>
         </View>
+      ) : null}
+      {messageAlerte ? (
+        <TouchableOpacity
+          style={styles.bandeauAlerte}
+          onPress={() => {
+            setAlerte(null);
+            enregistreur.effacerErreur();
+          }}
+        >
+          <Text style={styles.bandeauAlerteTexte}>{messageAlerte}</Text>
+        </TouchableOpacity>
       ) : null}
 
       {chargement ? (
@@ -234,6 +413,7 @@ export default function ChatConversation({ conversation, cote, onRetour, brouill
         <FlatList
           ref={liste}
           data={lignes}
+          extraData={pointeurs}
           keyExtractor={(item) => item.cle}
           renderItem={ligne}
           style={{ flex: 1 }}
@@ -271,36 +451,111 @@ export default function ChatConversation({ conversation, cote, onRetour, brouill
         />
       )}
 
-      <View style={styles.barreSaisie}>
-        <TextInput
-          style={[styles.saisie, { height: hauteurSaisie }, Platform.OS === 'web' && { outlineStyle: 'none' }]}
-          value={texte}
-          onChangeText={setTexte}
-          placeholder="Écrivez votre message…"
-          placeholderTextColor={COLORS.gris}
-          multiline
-          maxLength={LONGUEUR_MAX}
-          onContentSizeChange={(e) =>
-            setHauteurSaisie(
-              Math.min(HAUTEUR_SAISIE_MAX, Math.max(HAUTEUR_SAISIE_MIN, Math.ceil(e.nativeEvent.contentSize.height) + 14))
-            )
-          }
-          onKeyPress={surTouche}
-          accessibilityLabel="Votre message"
-        />
-        <TouchableOpacity
-          onPress={surEnvoi}
-          disabled={!peutEnvoyer}
-          style={[styles.boutonEnvoi, !peutEnvoyer && { opacity: 0.4 }]}
-          accessibilityRole="button"
-          accessibilityLabel="Envoyer le message"
-        >
-          <Ionicons name="send" size={18} color={COLORS.noir} />
-        </TouchableOpacity>
-      </View>
+      {menuOuvert && !enregistreur.actif ? (
+        <View style={styles.menu}>
+          <TouchableOpacity style={styles.menuChoix} onPress={() => choisirPhoto('galerie')} accessibilityRole="button">
+            <View style={[styles.menuIcone, { backgroundColor: '#E8F0FF' }]}>
+              <Ionicons name="image" size={22} color="#2563EB" />
+            </View>
+            <Text style={styles.menuTexte}>Photo</Text>
+          </TouchableOpacity>
+          {Platform.OS !== 'web' ? (
+            <TouchableOpacity style={styles.menuChoix} onPress={() => choisirPhoto('camera')} accessibilityRole="button">
+              <View style={[styles.menuIcone, { backgroundColor: '#FDECEA' }]}>
+                <Ionicons name="camera" size={22} color={COLORS.rouge} />
+              </View>
+              <Text style={styles.menuTexte}>Appareil photo</Text>
+            </TouchableOpacity>
+          ) : null}
+          <TouchableOpacity style={styles.menuChoix} onPress={choisirDocument} accessibilityRole="button">
+            <View style={[styles.menuIcone, { backgroundColor: '#FFF6DB' }]}>
+              <Ionicons name="document-text" size={22} color={COLORS.orFonce} />
+            </View>
+            <Text style={styles.menuTexte}>Document</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
+      {enregistreur.actif ? (
+        <View style={styles.barreSaisie}>
+          <TouchableOpacity
+            onPress={enregistreur.annuler}
+            style={styles.boutonRond}
+            accessibilityRole="button"
+            accessibilityLabel="Annuler l'enregistrement"
+          >
+            <Ionicons name="trash-outline" size={22} color={COLORS.rouge} />
+          </TouchableOpacity>
+          <View style={styles.enregistrement}>
+            <View style={styles.pointRouge} />
+            <Text style={styles.chrono}>{dureeLisible(enregistreur.secondes)}</Text>
+            <Text style={styles.enregistrementTexte}>Enregistrement…</Text>
+          </View>
+          <TouchableOpacity
+            onPress={envoyerVocal}
+            style={styles.boutonEnvoi}
+            accessibilityRole="button"
+            accessibilityLabel="Envoyer le message vocal"
+          >
+            <Ionicons name="send" size={18} color={COLORS.noir} />
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <View style={styles.barreSaisie}>
+          <TouchableOpacity
+            onPress={() => setMenuOuvert((v) => !v)}
+            style={styles.boutonRond}
+            accessibilityRole="button"
+            accessibilityLabel="Joindre une photo ou un document"
+          >
+            <Ionicons name={menuOuvert ? 'close' : 'attach'} size={26} color={COLORS.gris} />
+          </TouchableOpacity>
+          <TextInput
+            style={[styles.saisie, { height: hauteurSaisie }, Platform.OS === 'web' && { outlineStyle: 'none' }]}
+            value={texte}
+            onChangeText={(t) => {
+              setTexte(t);
+              if (t.trim()) signaler('texte');
+            }}
+            placeholder="Écrivez votre message…"
+            placeholderTextColor={COLORS.gris}
+            multiline
+            maxLength={LONGUEUR_MAX}
+            onFocus={() => setMenuOuvert(false)}
+            onContentSizeChange={(e) =>
+              setHauteurSaisie(
+                Math.min(HAUTEUR_SAISIE_MAX, Math.max(HAUTEUR_SAISIE_MIN, Math.ceil(e.nativeEvent.contentSize.height) + 14))
+              )
+            }
+            onKeyPress={surTouche}
+            accessibilityLabel="Votre message"
+          />
+          {peutEnvoyer ? (
+            <TouchableOpacity
+              onPress={surEnvoi}
+              style={styles.boutonEnvoi}
+              accessibilityRole="button"
+              accessibilityLabel="Envoyer le message"
+            >
+              <Ionicons name="send" size={18} color={COLORS.noir} />
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              onPress={demarrerVocal}
+              style={styles.boutonEnvoi}
+              accessibilityRole="button"
+              accessibilityLabel="Enregistrer un message vocal"
+            >
+              <Ionicons name="mic" size={22} color={COLORS.noir} />
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
       {texte.length > LONGUEUR_MAX - 200 ? (
         <Text style={styles.compteur}>{texte.length} / {LONGUEUR_MAX}</Text>
       ) : null}
+
+      <VisionneusePhoto photo={photoOuverte} onFermer={() => setPhotoOuverte(null)} />
     </KeyboardAvoidingView>
   );
 }
@@ -320,10 +575,14 @@ const styles = StyleSheet.create({
     borderBottomColor: '#ECE9E2',
   },
   boutonRetour: { paddingHorizontal: 4 },
-  enteteTitre: { flex: 1, marginLeft: 10, fontSize: 16, fontWeight: '800', color: COLORS.noir },
+  enteteTextes: { flex: 1, marginLeft: 10 },
+  enteteTitre: { fontSize: 16, fontWeight: '800', color: COLORS.noir },
+  enteteSousTitre: { fontSize: 12, color: COLORS.gris, marginTop: 1 },
 
   bandeauErreur: { backgroundColor: '#FDECEA', paddingVertical: 6, paddingHorizontal: 12 },
   bandeauErreurTexte: { color: COLORS.rouge, fontSize: 12.5 },
+  bandeauAlerte: { backgroundColor: '#FFF6DB', paddingVertical: 8, paddingHorizontal: 12 },
+  bandeauAlerteTexte: { color: COLORS.noir, fontSize: 12.5 },
 
   boutonPlus: { alignSelf: 'center', paddingVertical: 8, paddingHorizontal: 14, marginBottom: 8 },
   boutonPlusTexte: { color: COLORS.orFonce, fontWeight: '700', fontSize: 13 },
@@ -339,26 +598,29 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
 
-  ligneMessage: { marginVertical: 3, maxWidth: '100%' },
-  alignDroite: { alignItems: 'flex-end' },
-  alignGauche: { alignItems: 'flex-start' },
-  bulle: { maxWidth: '82%', paddingHorizontal: 12, paddingTop: 8, paddingBottom: 5, borderRadius: 16 },
-  bulleMoi: { backgroundColor: COLORS.or, borderBottomRightRadius: 4 },
-  bulleAutre: { backgroundColor: COLORS.blanc, borderBottomLeftRadius: 4, borderWidth: 1, borderColor: '#ECE9E2' },
-  bulleEchec: { borderWidth: 1.5, borderColor: COLORS.rouge },
-  texteMessage: { fontSize: 15, lineHeight: 21, color: COLORS.noir },
-  heureMessage: { fontSize: 10.5, color: 'rgba(0,0,0,0.5)', marginTop: 2, alignSelf: 'flex-end' },
-  erreurMessage: { fontSize: 11.5, color: COLORS.rouge, marginTop: 3, maxWidth: '82%', textAlign: 'right' },
+  menu: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    backgroundColor: COLORS.blanc,
+    borderTopWidth: 1,
+    borderTopColor: '#ECE9E2',
+    paddingVertical: 14,
+    paddingHorizontal: 8,
+  },
+  menuChoix: { alignItems: 'center', minWidth: 80 },
+  menuIcone: { width: 50, height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center' },
+  menuTexte: { fontSize: 12, color: COLORS.noir, marginTop: 6, fontWeight: '600' },
 
   barreSaisie: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     paddingVertical: 8,
     backgroundColor: COLORS.blanc,
     borderTopWidth: 1,
     borderTopColor: '#ECE9E2',
   },
+  boutonRond: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
   saisie: {
     flex: 1,
     backgroundColor: COLORS.creme,
@@ -379,5 +641,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  enregistrement: { flex: 1, flexDirection: 'row', alignItems: 'center', height: 42, paddingLeft: 6 },
+  pointRouge: { width: 10, height: 10, borderRadius: 5, backgroundColor: COLORS.rouge, marginRight: 8 },
+  chrono: { fontSize: 16, fontWeight: '700', color: COLORS.noir, marginRight: 10 },
+  enregistrementTexte: { fontSize: 13, color: COLORS.gris },
   compteur: { textAlign: 'right', fontSize: 11, color: COLORS.gris, paddingRight: 14, paddingBottom: 4, backgroundColor: COLORS.blanc },
 });
