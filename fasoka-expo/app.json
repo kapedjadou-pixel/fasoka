@@ -18,6 +18,9 @@
     "web": {
       "favicon": "./assets/favicon.png"
        },
+    "plugins": [
+     ["expo-av", { "microphonePermission": "FASOKA a besoin du micro pour enregistrer vos messages vocaux." }]
+   ],
     "extra": {
       "eas": {
         "projectId": "REMPLACE_MOI_APRES_EAS_INIT"
