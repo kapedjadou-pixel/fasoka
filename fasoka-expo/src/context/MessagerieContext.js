@@ -10,7 +10,7 @@ const MessagerieContext = createContext({
 });
 
 // Nombre de messages non lus, pour les pastilles rouges des onglets « Messages »
-// (côté client : toutes les boutiques ; côté boutique : une valeur par boutique). Actualisé toutes les 30 secondes.
+// (côté client : toutes les boutiques ; côté boutique : une valeur par boutique). Actualisé toutes les 20 secondes (c'est aussi ce qui indique que la personne est « en ligne »).
 export function MessagerieProvider({ children }) {
   const { user } = useAuth();
   const [nonLusClient, setNonLusClient] = useState(0);
@@ -30,7 +30,7 @@ export function MessagerieProvider({ children }) {
     }
   }, []);
 
-  useActualisation(rafraichirNonLus, 30000, Boolean(user));
+  useActualisation(rafraichirNonLus, 20000, Boolean(user));
 
   // À la déconnexion, on efface les compteurs
   useEffect(() => {
