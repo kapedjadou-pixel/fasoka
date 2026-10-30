@@ -6,7 +6,7 @@ import { ApiClient, ApiException } from '../../api/apiClient';
 import useActualisation from '../../hooks/useActualisation';
 import { useMessagerie } from '../../context/MessagerieContext';
 import Avatar from './Avatar';
-import { apercu, horodatageListe } from './formatage';
+import { apercuMessage, horodatageListe } from './formatage';
 
 // Liste des discussions. `cote` : 'client' (mes discussions avec des boutiques) ou 'boutique' (discussions avec
 // les clients de la boutique `shopId`). `actif` : vrai quand l'écran est affiché (l'actualisation s'arrête sinon).
@@ -63,7 +63,12 @@ export default function ListeConversations({ cote, shopId, onOuvrir, actif = tru
           <Text numberOfLines={1} style={[styles.titre, nonLus > 0 && { color: COLORS.noir }]}>{item.titre}</Text>
           <Text numberOfLines={1} style={[styles.apercu, nonLus > 0 && styles.apercuNonLu]}>
             {item.dernier_est_moi ? 'Vous : ' : ''}
-            {apercu(item.dernier_contenu)}
+            {apercuMessage({
+              type: item.dernier_type,
+              contenu: item.dernier_contenu,
+              nom_fichier: item.dernier_nom_fichier,
+              duree: item.dernier_duree,
+            })}
           </Text>
         </View>
         <View style={styles.droite}>
