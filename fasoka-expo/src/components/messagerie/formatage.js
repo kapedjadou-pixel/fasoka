@@ -54,3 +54,48 @@ export function jourDe(valeur) {
 export function apercu(texte) {
   return String(texte || '').replace(/\s+/g, ' ').trim();
 }
+
+// « 245 Ko », « 1,3 Mo »
+export function tailleLisible(octets) {
+  const n = Number(octets);
+  if (!n || n < 0) return '';
+  if (n < 1024) return n + ' o';
+  if (n < 1024 * 1024) return Math.round(n / 1024) + ' Ko';
+  return (n / (1024 * 1024)).toFixed(1).replace('.', ',') + ' Mo';
+}
+
+// Durée d'un message vocal : « 0:07 », « 2:30 »
+export function dureeLisible(secondes) {
+  const s = Math.max(0, Math.round(Number(secondes) || 0));
+  return Math.floor(s / 60) + ':' + deuxChiffres(s % 60);
+}
+
+// Sous le nom, en haut de la discussion : « en ligne », « vu aujourd'hui à 14:05 », « vu hier à 21:30 »...
+export function libelleVu(presence) {
+  if (!presence) return '';
+  if (presence.en_ligne) return 'en ligne';
+  const d = enDate(presence.vu_le);
+  if (!d) return '';
+  const jour = memeJour(d, new Date())
+    ? "aujourd'hui"
+    : memeJour(d, hier())
+      ? 'hier'
+      : 'le ' + deuxChiffres(d.getDate()) + '/' + deuxChiffres(d.getMonth() + 1) + '/' + d.getFullYear();
+  return 'vu ' + jour + ' à ' + heureCourte(d);
+}
+
+// Dernier message dans la liste des discussions (une photo, un vocal ou un document n'ont pas de texte)
+export function apercuMessage({ type, contenu, nom_fichier, duree }) {
+  if (type === 'image') return '📷 Photo';
+  if (type === 'audio') return '🎤 Message vocal' + (duree ? ' (' + dureeLisible(duree) + ')' : '');
+  if (type === 'document') return '📄 ' + (nom_fichier || 'Document');
+  return apercu(contenu);
+}
+
+// Version allégée d'une photo hébergée chez Cloudinary (les discussions chargent vite, même avec une connexion lente)
+export function miniature(url, largeur = 600) {
+  if (typeof url === 'string' && url.includes('/image/upload/') && !url.includes('/upload/w_')) {
+    return url.replace('/image/upload/', '/image/upload/w_' + largeur + ',c_limit,q_auto,f_auto/');
+  }
+  return url;
+}
