@@ -8,6 +8,7 @@ import LecteurAudio from './LecteurAudio';
 import { heureCourte, miniature, tailleLisible } from './formatage';
 
 const LARGEUR_PHOTO = 230;
+const TYPES_CONNUS = ['texte', 'image', 'audio', 'document'];
 
 function iconeDocument(mime, nom) {
   const texte = (String(mime || '') + ' ' + String(nom || '')).toLowerCase();
@@ -71,6 +72,10 @@ export default function BulleMessage({ m, statut, onReessayer, onOuvrirPhoto }) 
               {m.taille_octets ? <Text style={styles.documentTaille}>{tailleLisible(m.taille_octets)}</Text> : null}
             </View>
           </TouchableOpacity>
+        ) : null}
+
+        {m.type && !TYPES_CONNUS.includes(m.type) ? (
+          <Text style={styles.texteMessage}>Ce message n'est pas pris en charge par cette version. Actualisez l'application.</Text>
         ) : null}
 
         {m.contenu ? (
