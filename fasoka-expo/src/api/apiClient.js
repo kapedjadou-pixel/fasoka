@@ -130,7 +130,7 @@ export const ApiClient = {
     return handle(response);
   },
 
-  async uploadImage(path, asset) {
+  async uploadImage(path, asset, method = 'POST') {
     const token = await getToken();
     const formData = new FormData();
 
@@ -148,7 +148,7 @@ export const ApiClient = {
     }
 
     const response = await requete(`${API_BASE_URL}${path}`, {
-      method: 'POST',
+      method,
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
