@@ -16,6 +16,14 @@ function envoyerVersCloudinary(buffer, dossier) {
   });
 }
 
+const MAX_PHOTOS = 8;
+
+// Supprime l'image chez Cloudinary (si elle y est hébergée) ; échec silencieux
+async function supprimerChezCloudinary(url) {
+  const match = String(url || '').match(/fasoka\/produits\/[^./]+/);
+  if (match) await cloudinary.uploader.destroy(match[0]).catch(() => {});
+}
+
 // POST /api/products/:productId/images  (multipart/form-data, champ "image")
 async function uploadProductImage(req, res, next) {
   try {
@@ -34,11 +42,14 @@ async function uploadProductImage(req, res, next) {
       return res.status(403).json({ error: 'Accès non autorisé à ce produit.' });
     }
 
-    const resultat = await envoyerVersCloudinary(req.file.buffer, 'fasoka/produits');
-
     const nombreImages = await db.query(
       `SELECT COUNT(*) FROM product_images WHERE product_id = $1`, [req.params.productId]
     );
+    if (parseInt(nombreImages.rows[0].count, 10) >= MAX_PHOTOS) {
+      return res.status(400).json({ error: `Un produit peut avoir ${MAX_PHOTOS} photos au maximum.` });
+    }
+
+    const resultat = await envoyerVersCloudinary(req.file.buffer, 'fasoka/produits');
 
     const inserted = await db.query(
       `INSERT INTO product_images (product_id, image_url, ordre) VALUES ($1, $2, $3) RETURNING *`,
@@ -69,15 +80,47 @@ async function deleteProductImage(req, res, next) {
     }
 
     // Extrait le public_id Cloudinary depuis l'URL pour pouvoir la supprimer côté Cloudinary aussi
-    const url = image.rows[0].image_url;
-    const match = url.match(/fasoka\/produits\/[^./]+/);
-    if (match) {
-      await cloudinary.uploader.destroy(match[0]).catch(() => {});
-    }
+    await supprimerChezCloudinary(image.rows[0].image_url);
 
     await db.query(`DELETE FROM product_images WHERE id = $1`, [req.params.imageId]);
     res.json({ message: 'Image supprimée.' });
   } catch (err) {
+    next(err);
+  }
+}
+
+// PUT /api/products/:productId/images/:imageId  (multipart/form-data, champ "image")
+// Remplace une photo : la nouvelle prend la même place (ordre), l'ancienne est supprimée
+async function replaceProductImage(req, res, next) {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Aucune image reçue.' });
+    }
+
+    // L'image doit appartenir à ce produit, et le produit à une boutique de l'utilisateur
+    const image = await db.query(
+      `SELECT pi.* FROM product_images pi
+       JOIN products p ON p.id = pi.product_id
+       JOIN shop_team_members tm ON tm.shop_id = p.shop_id
+       WHERE pi.id = $1 AND pi.product_id = $2 AND tm.user_id = $3`,
+      [req.params.imageId, req.params.productId, req.userId]
+    );
+    if (image.rows.length === 0) {
+      return res.status(404).json({ error: 'Image introuvable.' });
+    }
+
+    const resultat = await envoyerVersCloudinary(req.file.buffer, 'fasoka/produits');
+    const maj = await db.query(
+      `UPDATE product_images SET image_url = $1 WHERE id = $2 RETURNING *`,
+      [resultat.secure_url, req.params.imageId]
+    );
+    await supprimerChezCloudinary(image.rows[0].image_url);
+
+    res.json(maj.rows[0]);
+  } catch (err) {
+    if (err.message && err.message.includes('format')) {
+      return res.status(400).json({ error: err.message });
+    }
     next(err);
   }
 }
@@ -115,4 +158,4 @@ async function reorderProductImages(req, res, next) {
   }
 }
 
-module.exports = { uploadProductImage, deleteProductImage, reorderProductImages };
+module.exports = { uploadProductImage, replaceProductImage, deleteProductImage, reorderProductImages };
