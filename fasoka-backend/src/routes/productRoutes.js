@@ -3,11 +3,14 @@ const router = express.Router();
 const { requireAuth, requireShopAccess, requireProductShopAccess } = require('../middleware/auth');
 const upload = require('../middleware/upload');
 const {
-  createProduct, listShopProducts, getProduct, feed, updateProduct, stockAlerts, deleteProduct,
+  createProduct, listShopProducts, getProduct, categories, feed, updateProduct, stockAlerts, deleteProduct,
 } = require('../controllers/productController');
-const { uploadProductImage, deleteProductImage, reorderProductImages } = require('../controllers/imageController');
+const {
+  uploadProductImage, replaceProductImage, deleteProductImage, reorderProductImages,
+} = require('../controllers/imageController');
 
 router.get('/feed', feed);
+router.get('/categories', categories);
 router.get('/shop/:shopId', listShopProducts);
 router.post('/shop/:shopId', requireAuth, requireShopAccess, createProduct);
 router.get('/shop/:shopId/alertes-stock', requireAuth, requireShopAccess, stockAlerts);
@@ -19,6 +22,8 @@ router.delete('/:productId', requireAuth, requireProductShopAccess, deleteProduc
 // Photos produit (champ multipart attendu : "image")
 router.post('/:productId/images', requireAuth, upload.single('image'), uploadProductImage);
 router.patch('/:productId/images/reorder', requireAuth, reorderProductImages);
+// Remplacer une photo (même place, nouvelle image)
+router.put('/:productId/images/:imageId', requireAuth, upload.single('image'), replaceProductImage);
 router.delete('/:productId/images/:imageId', requireAuth, deleteProductImage);
 
 module.exports = router;
