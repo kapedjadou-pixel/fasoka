@@ -6,7 +6,10 @@ export function CartProvider({ children }) {
   const [items, setItems] = useState([]); // { product, qte }
   const [shopId, setShopId] = useState(null);
 
-  const ajouter = useCallback((produit) => {
+  // `quantite` : nombre d'exemplaires à ajouter (1 par défaut). Le total d'un produit ne dépasse pas son stock.
+  const ajouter = useCallback((produit, quantite = 1) => {
+    const stock = Number(produit.stock_quantite);
+    const plafond = Number.isFinite(stock) && stock > 0 ? stock : Infinity;
     setItems((prev) => {
       let base = prev;
       // Un panier = une seule boutique à la fois
@@ -15,9 +18,9 @@ export function CartProvider({ children }) {
       }
       const existant = base.find((i) => i.product.id === produit.id);
       if (existant) {
-        return base.map((i) => (i.product.id === produit.id ? { ...i, qte: i.qte + 1 } : i));
+        return base.map((i) => (i.product.id === produit.id ? { ...i, qte: Math.min(i.qte + quantite, plafond) } : i));
       }
-      return [...base, { product: produit, qte: 1 }];
+      return [...base, { product: produit, qte: Math.min(quantite, plafond) }];
     });
     setShopId(produit.shop_id);
   }, [shopId]);
