@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  View, Text, TextInput, FlatList, Image, TouchableOpacity,
+  View, Text, TextInput, FlatList, Image, TouchableOpacity, ScrollView,
   ActivityIndicator, StyleSheet, useWindowDimensions, Platform, BackHandler,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,6 +9,8 @@ import { ApiClient } from '../../api/apiClient';
 import { useCart } from '../../context/CartContext';
 import { useAuth } from '../../context/AuthContext';
 import { useSpace } from '../../context/SpaceContext';
+import useRetourEnArriere from '../../hooks/useRetourEnArriere';
+import ProductDetail from '../../components/ProductDetail';
 
 const LARGEUR_MAX = 1200; // largeur maximale du contenu sur grand écran
 const ECART = 10; // espace entre les cartes
@@ -52,6 +54,14 @@ export default function ClientHomeScreen({ navigation }) {
   const [chargement, setChargement] = useState(true);
   const [erreur, setErreur] = useState(null);
   const [dernierAjout, setDernierAjout] = useState(null);
+  const [produitOuvert, setProduitOuvert] = useState(null); // produit affiché en fiche détaillée
+  const [categories, setCategories] = useState([]); // catégories utilisées par les produits en vente
+  const [categorieActive, setCategorieActive] = useState(''); // '' = toutes
+  const categorieRef = useRef('');
+  const produitOuvertRef = useRef(null);
+  produitOuvertRef.current = produitOuvert;
+  // Le bouton Retour (navigateur ou téléphone) ferme la fiche produit au lieu de quitter l'accueil
+  useRetourEnArriere(produitOuvert !== null, () => setProduitOuvert(null));
   const entreeHistorique = useRef(false); // vrai si une entrée a été ajoutée à l'historique du navigateur
   // Une graine par visite : l'ordre des produits change à chaque ouverture de l'app / chargement de la page,
   // mais reste identique pendant la visite (retour d'une recherche, changement d'onglet).
@@ -66,9 +76,10 @@ export default function ClientHomeScreen({ navigation }) {
     setChargement(true);
     setErreur(null);
     try {
-      const data = await ApiClient.get('/products/feed', texte
-        ? { recherche: texte, seed: graine.current }
-        : { seed: graine.current });
+      const parametres = { seed: graine.current };
+      if (texte) parametres.recherche = texte;
+      if (categorieRef.current) parametres.categorie = categorieRef.current;
+      const data = await ApiClient.get('/products/feed', parametres);
       setProduits(data);
     } catch (e) {
       setErreur('Impossible de charger les produits.');
@@ -78,6 +89,17 @@ export default function ClientHomeScreen({ navigation }) {
   }, []);
 
   useEffect(() => { charger(); }, [charger]);
+
+  // Catégories proposées en haut de l'accueil
+  useEffect(() => {
+    ApiClient.get('/products/categories').then(setCategories).catch(() => {});
+  }, []);
+
+  function choisirCategorie(nom) {
+    categorieRef.current = nom;
+    setCategorieActive(nom);
+    charger(termeActif);
+  }
 
   // Revient à la liste complète des produits (aucune recherche)
   const afficherTout = useCallback(() => {
@@ -117,7 +139,7 @@ export default function ClientHomeScreen({ navigation }) {
   useEffect(() => {
     if (Platform.OS !== 'web') return undefined;
     const surRetour = () => {
-      if (entreeHistorique.current) afficherTout();
+      if (entreeHistorique.current && !produitOuvertRef.current) afficherTout();
     };
     window.addEventListener('popstate', surRetour);
     return () => window.removeEventListener('popstate', surRetour);
@@ -127,7 +149,7 @@ export default function ClientHomeScreen({ navigation }) {
   useEffect(() => {
     if (Platform.OS === 'web') return undefined;
     const abonnement = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (termeActif && navigation.isFocused()) {
+      if (termeActif && navigation.isFocused() && !produitOuvertRef.current) {
         afficherTout();
         return true;
       }
@@ -162,14 +184,30 @@ export default function ClientHomeScreen({ navigation }) {
     const rupture = stock <= 0;
     const photo = item.images && item.images.length > 0 ? item.images[0] : null;
 
+    const nouveau = item.created_at && Date.now() - new Date(item.created_at).getTime() < 7 * 24 * 3600 * 1000;
+    const nombrePhotos = item.images ? item.images.length : 0;
+
     return (
-      <View style={[styles.carte, { width: largeurCarte }]}>
+      <TouchableOpacity
+        activeOpacity={0.92}
+        onPress={() => setProduitOuvert(item)}
+        style={[styles.carte, { width: largeurCarte }]}
+        accessibilityRole="button"
+        accessibilityLabel={`Voir le produit ${item.nom}`}
+      >
         <View style={styles.imageZone}>
           {photo ? (
             <Image source={{ uri: photo }} style={styles.image} resizeMode="cover" />
           ) : (
             <Ionicons name="cube-outline" size={40} color={COLORS.gris} />
           )}
+          {nouveau ? <Text style={styles.badgeNouveau}>Nouveau</Text> : null}
+          {nombrePhotos > 1 ? (
+            <View style={styles.badgePhotos}>
+              <Ionicons name="images-outline" size={11} color={COLORS.blanc} />
+              <Text style={styles.badgePhotosTexte}>{nombrePhotos}</Text>
+            </View>
+          ) : null}
           <TouchableOpacity
             style={[styles.boutonAjout, rupture && styles.boutonDesactive]}
             disabled={rupture}
@@ -180,7 +218,9 @@ export default function ClientHomeScreen({ navigation }) {
         </View>
 
         <View style={styles.infos}>
+          {item.categorie ? <Text numberOfLines={1} style={styles.categorieCarte}>{item.categorie}</Text> : null}
           <Text numberOfLines={2} style={styles.nom}>{item.nom}</Text>
+          {item.description ? <Text numberOfLines={2} style={styles.descriptionCarte}>{item.description}</Text> : null}
           <Text style={styles.prix}>{Number(item.prix).toLocaleString('fr-FR')} F CFA</Text>
           <View style={styles.ligneBoutique}>
             {item.badge_verifie ? (
@@ -211,7 +251,7 @@ export default function ClientHomeScreen({ navigation }) {
             <Text style={styles.stockFaible}>Plus que {stock} en stock</Text>
           ) : null}
         </View>
-      </View>
+      </TouchableOpacity>
     );
   }
 
@@ -241,6 +281,22 @@ export default function ClientHomeScreen({ navigation }) {
         </TouchableOpacity>
       </View>
 
+      {categories.length > 0 ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 12 }} contentContainerStyle={{ gap: 8 }}>
+          {[{ nom: '', libelle: 'Tous' }, ...categories.map((c) => ({ nom: c.nom, libelle: c.nom }))].map((c) => (
+            <TouchableOpacity
+              key={c.libelle}
+              style={[styles.puce, categorieActive === c.nom && styles.puceActive]}
+              onPress={() => choisirCategorie(c.nom)}
+              accessibilityRole="button"
+              accessibilityLabel={`Catégorie ${c.libelle}`}
+            >
+              <Text style={[styles.puceTexte, categorieActive === c.nom && styles.puceTexteActive]}>{c.libelle}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      ) : null}
+
       {termeActif ? (
         <View style={styles.barreResultats}>
           <Text style={styles.resultatsTexte} numberOfLines={1}>Résultats pour « {termeActif} »</Text>
@@ -252,7 +308,7 @@ export default function ClientHomeScreen({ navigation }) {
       ) : null}
 
       <View style={styles.titreLigne}>
-        <Text style={styles.titreSection}>{termeActif ? 'Résultats' : 'Produits à découvrir'}</Text>
+        <Text style={styles.titreSection}>{termeActif ? 'Résultats' : categorieActive || 'Produits à découvrir'}</Text>
         {!chargement && !erreur ? (
           <Text style={styles.compteur}>{produits.length} produit{produits.length > 1 ? 's' : ''}</Text>
         ) : null}
@@ -291,6 +347,19 @@ export default function ClientHomeScreen({ navigation }) {
           contentContainerStyle={{ paddingBottom: 24 }}
         />
       </View>
+
+      {produitOuvert ? (
+        <ProductDetail
+          key={produitOuvert.id}
+          produit={produitOuvert}
+          maBoutiqueId={maBoutique ? maBoutique.id : null}
+          onFermer={() => setProduitOuvert(null)}
+          onAjouter={(produit, quantite) => ajouter(produit, quantite)}
+          onContacter={(produit) => { setProduitOuvert(null); contacterBoutique(produit); }}
+          onVoirPanier={() => { setProduitOuvert(null); navigation.navigate('Panier'); }}
+          onOuvrirAutre={(produit) => setProduitOuvert(produit)}
+        />
+      ) : null}
     </View>
   );
 }
@@ -343,4 +412,19 @@ const styles = StyleSheet.create({
   ville: { fontSize: 11, color: COLORS.gris, marginLeft: 3, flexShrink: 1 },
   stockFaible: { fontSize: 11, color: COLORS.rouge, marginTop: 4, fontWeight: '600' },
   rupture: { fontSize: 11, color: COLORS.gris, marginTop: 4, fontWeight: '600' },
+  categorieCarte: { fontSize: 10.5, fontWeight: '700', color: COLORS.orFonce, textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 2 },
+  descriptionCarte: { fontSize: 11.5, color: COLORS.gris, lineHeight: 15, marginTop: 2 },
+  badgeNouveau: {
+    position: 'absolute', left: 8, top: 8, backgroundColor: COLORS.rouge, color: COLORS.blanc,
+    fontSize: 10.5, fontWeight: '800', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2, overflow: 'hidden',
+  },
+  badgePhotos: {
+    position: 'absolute', left: 8, bottom: 8, flexDirection: 'row', alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 9, paddingHorizontal: 7, paddingVertical: 3,
+  },
+  badgePhotosTexte: { color: COLORS.blanc, fontSize: 10.5, fontWeight: '700', marginLeft: 3 },
+  puce: { backgroundColor: 'white', borderRadius: 18, paddingHorizontal: 14, paddingVertical: 7, borderWidth: 1, borderColor: '#E6E2D8' },
+  puceActive: { backgroundColor: COLORS.or, borderColor: COLORS.or },
+  puceTexte: { fontSize: 13, color: COLORS.noir },
+  puceTexteActive: { fontWeight: '800' },
 });
