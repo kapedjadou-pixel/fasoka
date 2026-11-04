@@ -10,7 +10,7 @@ import BoutiqueDashboardScreen from '../screens/boutique/BoutiqueDashboardScreen
 import CatalogScreen from '../screens/boutique/CatalogScreen';
 import OrdersScreen from '../screens/boutique/OrdersScreen';
 import BoutiqueMessagesScreen from '../screens/boutique/BoutiqueMessagesScreen';
-import ProductGalleryScreen from '../screens/boutique/ProductGalleryScreen';
+import ProductEditScreen from '../screens/boutique/ProductEditScreen';
 
 const Tab = createBottomTabNavigator();
 const CatalogStack = createNativeStackNavigator();
@@ -18,15 +18,15 @@ const CatalogStack = createNativeStackNavigator();
 // Noms de base des icônes Ionicons (version contour quand inactif, version pleine quand actif)
 const ICONES = { 'Tableau de bord': 'stats-chart', Catalogue: 'pricetags', Commandes: 'bag-check', Messages: 'chatbubbles' };
 
-// Le catalogue a besoin de sa propre pile de navigation pour pouvoir ouvrir la galerie photos
+// Le catalogue a besoin de sa propre pile de navigation pour pouvoir ouvrir l'écran de modification d'un produit
 function CatalogStackScreen() {
   return (
     <CatalogStack.Navigator>
       <CatalogStack.Screen name="CatalogueListe" component={CatalogScreen} options={{ headerShown: false }} />
       <CatalogStack.Screen
-        name="ProductGallery"
-        component={ProductGalleryScreen}
-        options={({ route }) => ({ title: `Photos — ${route.params.productNom}`, headerStyle: { backgroundColor: COLORS.noir }, headerTintColor: 'white' })}
+        name="ProductEdit"
+        component={ProductEditScreen}
+        options={{ title: 'Produit', headerStyle: { backgroundColor: COLORS.noir }, headerTintColor: 'white' }}
       />
     </CatalogStack.Navigator>
   );
