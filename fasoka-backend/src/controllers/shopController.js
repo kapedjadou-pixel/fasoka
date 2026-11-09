@@ -58,20 +58,50 @@ async function getShop(req, res, next) {
 }
 
 // PATCH /api/shops/:shopId - Modifier les infos boutique
+// Contrôle des champs modifiables d'une boutique : renvoie un message d'erreur, ou null si tout est valide
+function validerChampsBoutique({ nom_boutique, description, categorie, ville, adresse, logo_url }) {
+  const texte = (valeur) => valeur === undefined || valeur === null || typeof valeur === 'string';
+  if (![nom_boutique, description, categorie, ville, adresse, logo_url].every(texte)) {
+    return 'Les informations de la boutique doivent être du texte.';
+  }
+  if (nom_boutique !== undefined && nom_boutique !== null) {
+    if (!nom_boutique.trim()) return 'Le nom de la boutique est obligatoire.';
+    if (nom_boutique.trim().length > 150) return 'Le nom de la boutique est trop long (150 caractères maximum).';
+  }
+  if (ville !== undefined && ville !== null) {
+    if (!ville.trim()) return 'La ville est obligatoire.';
+    if (ville.trim().length > 100) return 'La ville est trop longue (100 caractères maximum).';
+  }
+  if (description && description.length > 2000) return 'La description est trop longue (2000 caractères maximum).';
+  if (categorie && categorie.length > 100) return 'La catégorie est trop longue (100 caractères maximum).';
+  if (adresse && adresse.length > 300) return "L'adresse est trop longue (300 caractères maximum).";
+  if (logo_url && (!/^https:\/\//.test(logo_url) || logo_url.length > 500)) return "L'adresse du logo n'est pas valide.";
+  return null;
+}
+
 async function updateShop(req, res, next) {
   try {
     const { nom_boutique, description, categorie, ville, adresse, logo_url } = req.body;
+    const erreur = validerChampsBoutique({ nom_boutique, description, categorie, ville, adresse, logo_url });
+    if (erreur) return res.status(400).json({ error: erreur });
+
+    // Une valeur absente laisse le champ inchangé ; une valeur vide efface la description, la catégorie ou l'adresse
     const result = await db.query(
       `UPDATE shops SET
         nom_boutique = COALESCE($1, nom_boutique),
-        description = COALESCE($2, description),
-        categorie = COALESCE($3, categorie),
+        description = CASE WHEN $2::text IS NULL THEN description WHEN TRIM($2::text) = '' THEN NULL ELSE TRIM($2::text) END,
+        categorie = CASE WHEN $3::text IS NULL THEN categorie WHEN TRIM($3::text) = '' THEN NULL ELSE TRIM($3::text) END,
         ville = COALESCE($4, ville),
-        adresse = COALESCE($5, adresse),
+        adresse = CASE WHEN $5::text IS NULL THEN adresse WHEN TRIM($5::text) = '' THEN NULL ELSE TRIM($5::text) END,
         logo_url = COALESCE($6, logo_url),
         updated_at = NOW()
        WHERE id = $7 RETURNING *`,
-      [nom_boutique, description, categorie, ville, adresse, logo_url, req.params.shopId]
+      [
+        typeof nom_boutique === 'string' ? nom_boutique.trim() : nom_boutique,
+        description, categorie,
+        typeof ville === 'string' ? ville.trim() : ville,
+        adresse, logo_url, req.params.shopId,
+      ]
     );
     res.json(result.rows[0]);
   } catch (err) {
