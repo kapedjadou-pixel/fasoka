@@ -1,11 +1,41 @@
 const db = require('../config/database');
 const { isUuid } = require('../middleware/auth');
+const { notifierChangementStatut } = require('../services/commandeNotifications');
 require('dotenv').config();
 
 const OPERATEURS_VALIDES = ['mixx', 'flooz', 'especes'];
 const MODES_LIVRAISON_VALIDES = ['retrait', 'livraison_vendeur'];
 const MAX_LIGNES_PAR_COMMANDE = 50;
 const MAX_QUANTITE_PAR_LIGNE = 1000;
+
+// Historique des statuts : une ligne par changement, avec sa date (permet d'afficher le suivi de la commande)
+async function initialiserCommandes() {
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS order_status_history (
+      id BIGSERIAL PRIMARY KEY,
+      order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      statut VARCHAR(30) NOT NULL,
+      auteur_id UUID REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMP DEFAULT NOW()
+    )`);
+  await db.query(`CREATE INDEX IF NOT EXISTS idx_order_status_history_order ON order_status_history(order_id, id)`);
+}
+
+// Note un statut dans l'historique, à l'intérieur de la transaction de la commande. Un point de sauvegarde garantit
+// qu'un souci avec l'historique (table pas encore créée...) n'empêche jamais de passer ou de faire avancer une commande.
+async function noterHistorique(client, orderId, statut, auteurId) {
+  await client.query('SAVEPOINT historique_commande');
+  try {
+    await client.query(
+      `INSERT INTO order_status_history (order_id, statut, auteur_id) VALUES ($1, $2, $3)`,
+      [orderId, statut, auteurId]
+    );
+    await client.query('RELEASE SAVEPOINT historique_commande');
+  } catch (e) {
+    await client.query('ROLLBACK TO SAVEPOINT historique_commande').catch(() => {});
+    console.error("Historique de commande non enregistré :", e.message);
+  }
+}
 
 // Petit utilitaire : lève une erreur « métier » interceptée plus bas pour répondre avec le bon code HTTP
 function erreur(status, message) {
@@ -146,6 +176,7 @@ async function createOrder(req, res, next) {
       [req.userId, shop_id, modeLivraison, adresse_livraison ? String(adresse_livraison).trim() : null, montant_total]
     );
     const order = orderResult.rows[0];
+    await noterHistorique(client, order.id, 'en_attente', req.userId);
 
     for (const ligne of lignesValidees) {
       await client.query(
@@ -187,13 +218,27 @@ async function createOrder(req, res, next) {
   }
 }
 
-// GET /api/orders/mine - Historique des commandes du client
+// Aperçu des articles d'une commande dans les listes : nombre total d'articles et les 3 premiers (nom, photo, quantité)
+const APERCU_ARTICLES_SQL = `
+  LEFT JOIN LATERAL (
+    SELECT COALESCE(json_agg(json_build_object('nom', t.nom, 'image', t.image, 'quantite', t.quantite) ORDER BY t.nom), '[]') AS apercu,
+           (SELECT COALESCE(SUM(quantite), 0)::int FROM order_items WHERE order_id = o.id) AS nombre_articles
+    FROM (
+      SELECT p.nom, oi.quantite,
+             (SELECT image_url FROM product_images WHERE product_id = p.id ORDER BY ordre, id LIMIT 1) AS image
+      FROM order_items oi JOIN products p ON p.id = oi.product_id
+      WHERE oi.order_id = o.id ORDER BY p.nom, oi.id LIMIT 3
+    ) t
+  ) a ON TRUE`;
+
+// GET /api/orders/mine - Commandes du client connecté
 async function myOrders(req, res, next) {
   try {
     const result = await db.query(
-      `SELECT o.*, s.nom_boutique, s.logo_url
+      `SELECT o.*, s.nom_boutique, s.logo_url, a.apercu, a.nombre_articles
        FROM orders o JOIN shops s ON s.id = o.shop_id
-       WHERE o.client_id = $1 ORDER BY o.created_at DESC`,
+       ${APERCU_ARTICLES_SQL}
+       WHERE o.client_id = $1 ORDER BY o.created_at DESC LIMIT 200`,
       [req.userId]
     );
     res.json(result.rows);
@@ -202,20 +247,125 @@ async function myOrders(req, res, next) {
   }
 }
 
-// GET /api/shops/:shopId/orders - Commandes reçues par la boutique
+// GET /api/orders/mine/mises-a-jour?depuis=<date ISO> - Nombre de commandes dont le statut a changé depuis cette date
+// (pastille « nouveauté » de l'onglet Historique)
+async function miseAJourCommandes(req, res, next) {
+  try {
+    const depuis = new Date(String(req.query.depuis || ''));
+    if (Number.isNaN(depuis.getTime())) {
+      return res.status(400).json({ error: 'Date invalide.' });
+    }
+    // Toute évolution d'une commande la fait sortir de « en_attente » : ce statut seul signifie « aucun changement »
+    const result = await db.query(
+      `SELECT COUNT(*)::int AS nombre FROM orders
+       WHERE client_id = $1 AND statut <> 'en_attente' AND updated_at > $2`,
+      [req.userId, depuis.toISOString()]
+    );
+    res.json({ nombre: result.rows[0].nombre });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// GET /api/orders/shop/:shopId - Commandes d'une boutique (filtre ?statut= possible)
 async function shopOrders(req, res, next) {
   try {
     const { statut } = req.query;
-    let query = `SELECT o.*, u.nom, u.prenom, u.telephone FROM orders o
-                 JOIN users u ON u.id = o.client_id WHERE o.shop_id = $1`;
+    let query = `SELECT o.*, u.nom, u.prenom, u.telephone, a.apercu, a.nombre_articles
+                 FROM orders o
+                 JOIN users u ON u.id = o.client_id
+                 ${APERCU_ARTICLES_SQL}
+                 WHERE o.shop_id = $1`;
     const params = [req.params.shopId];
     if (statut) {
       params.push(statut);
       query += ` AND o.statut = $${params.length}`;
     }
-    query += ` ORDER BY o.created_at DESC`;
+    query += ` ORDER BY o.created_at DESC LIMIT 300`;
     const result = await db.query(query, params);
     res.json(result.rows);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// GET /api/orders/:orderId[?cote=client|boutique] - Détail d'une commande : articles, suivi, livraison, paiement.
+// Visible par le client qui l'a passée et par l'équipe de la boutique ; seule la boutique voit les coordonnées du client.
+async function getOrder(req, res, next) {
+  try {
+    const { orderId } = req.params;
+    if (!isUuid(orderId)) {
+      return res.status(404).json({ error: 'Commande introuvable.' });
+    }
+
+    const commande = await db.query(
+      `SELECT o.*, s.nom_boutique, s.logo_url, s.ville AS boutique_ville, s.adresse AS boutique_adresse,
+              u.prenom AS client_prenom, u.nom AS client_nom, u.telephone AS client_telephone,
+              (o.client_id = $2) AS est_client,
+              (s.owner_id = $2 OR EXISTS (
+                 SELECT 1 FROM shop_team_members tm WHERE tm.shop_id = s.id AND tm.user_id = $2
+              )) AS est_boutique
+       FROM orders o
+       JOIN shops s ON s.id = o.shop_id
+       JOIN users u ON u.id = o.client_id
+       WHERE o.id = $1`,
+      [orderId, req.userId]
+    );
+    const o = commande.rows[0];
+    if (!o || (!o.est_client && !o.est_boutique)) {
+      return res.status(404).json({ error: 'Commande introuvable.' });
+    }
+
+    // Quelqu'un qui est à la fois client et membre de la boutique choisit son point de vue avec ?cote=
+    const cote = req.query.cote === 'boutique' && o.est_boutique
+      ? 'boutique'
+      : req.query.cote === 'client' && o.est_client
+        ? 'client'
+        : (o.est_client ? 'client' : 'boutique');
+
+    const [articles, historique, paiement] = await Promise.all([
+      db.query(
+        `SELECT oi.id, oi.product_id, oi.quantite, oi.prix_unitaire, p.nom, p.actif,
+                (SELECT image_url FROM product_images WHERE product_id = p.id ORDER BY ordre, id LIMIT 1) AS image
+         FROM order_items oi JOIN products p ON p.id = oi.product_id
+         WHERE oi.order_id = $1 ORDER BY p.nom, oi.id`,
+        [orderId]
+      ),
+      db.query(`SELECT statut, created_at FROM order_status_history WHERE order_id = $1 ORDER BY id`, [orderId])
+        .catch(() => ({ rows: [] })), // table d'historique pas encore créée : on affiche le suivi sans dates
+      db.query(`SELECT operateur FROM transactions WHERE order_id = $1 ORDER BY created_at LIMIT 1`, [orderId]),
+    ]);
+
+    res.json({
+      id: o.id,
+      numero: String(o.id).slice(0, 8).toUpperCase(),
+      cote,
+      statut: o.statut,
+      montant_total: Number(o.montant_total),
+      mode_livraison: o.mode_livraison,
+      adresse_livraison: o.adresse_livraison,
+      created_at: o.created_at,
+      updated_at: o.updated_at,
+      boutique: { id: o.shop_id, nom: o.nom_boutique, logo_url: o.logo_url, ville: o.boutique_ville, adresse: o.boutique_adresse },
+      client: cote === 'boutique'
+        ? { prenom: o.client_prenom, nom: o.client_nom, telephone: o.client_telephone }
+        : null,
+      articles: articles.rows.map((a) => ({
+        id: a.id,
+        product_id: a.product_id,
+        nom: a.nom,
+        image: a.image || null,
+        quantite: Number(a.quantite),
+        prix_unitaire: Number(a.prix_unitaire),
+        sous_total: Math.round(Number(a.prix_unitaire) * Number(a.quantite) * 100) / 100,
+        disponible: Boolean(a.actif),
+      })),
+      nombre_articles: articles.rows.reduce((somme, a) => somme + Number(a.quantite), 0),
+      historique: historique.rows.map((h) => ({ statut: h.statut, date: h.created_at })),
+      // Seul le mode de paiement est indiqué : Mixx et Flooz sont simulés, on ne présente pas de « paiement réussi »
+      paiement: { operateur: paiement.rows[0] ? paiement.rows[0].operateur : 'especes' },
+      transitions_possibles: cote === 'boutique' ? TRANSITIONS_STATUT[o.statut] || [] : [],
+    });
   } catch (err) {
     next(err);
   }
@@ -264,7 +414,9 @@ async function updateOrderStatus(req, res, next) {
       [statut, req.order.id]
     );
 
-        // Une commande annulée rend les articles au stock (le stock est décrémenté à la création).
+    await noterHistorique(client, req.order.id, statut, req.userId);
+
+    // Une commande annulée rend les articles au stock (le stock est décrémenté à la création).
     // Grâce aux transitions, une commande ne peut être annulée qu'une seule fois : pas de double remise en stock.
     if (statut === 'annulee') {
       await client.query(
@@ -277,7 +429,7 @@ async function updateOrderStatus(req, res, next) {
         [req.order.id]
       );
     }
-    
+
     // Quand une commande est livrée, on incrémente le compteur de ventes de la boutique.
     // Grâce aux transitions, cela ne peut arriver qu'une seule fois par commande.
     if (statut === 'livree') {
@@ -286,6 +438,11 @@ async function updateOrderStatus(req, res, next) {
 
     await client.query('COMMIT');
     res.json(result.rows[0]);
+
+    // Email au client (en arrière-plan, sans effet sur la commande en cas d'échec)
+    notifierChangementStatut(req.order.id, statut).catch((e) =>
+      console.error('Email de changement de statut non envoyé :', e.message)
+    );
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     next(err);
@@ -294,4 +451,6 @@ async function updateOrderStatus(req, res, next) {
   }
 }
 
-module.exports = { createOrder, myOrders, shopOrders, updateOrderStatus };
+module.exports = {
+  initialiserCommandes, createOrder, myOrders, miseAJourCommandes, shopOrders, getOrder, updateOrderStatus,
+};
