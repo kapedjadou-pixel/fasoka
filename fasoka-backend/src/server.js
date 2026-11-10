@@ -16,6 +16,7 @@ const accountRoutes = require('./routes/accountRoutes');
 const messagerieRoutes = require('./routes/messagerieRoutes');
 const { initialiserTables } = require('./controllers/accountController');
 const { initialiserMessagerie } = require('./controllers/messagerieController');
+const { initialiserCommandes } = require('./controllers/orderController');
 const errorHandler = require('./middleware/errorHandler');
 
 const app = express();
@@ -103,6 +104,10 @@ app.listen(PORT, () => {
   // Tables de la messagerie (conversations et messages)
   initialiserMessagerie().catch((err) =>
     console.error('Initialisation de la messagerie impossible :', err.message)
+  );
+  // Table de l'historique des statuts de commande
+  initialiserCommandes().catch((err) =>
+    console.error("Initialisation de l'historique des commandes impossible :", err.message)
   );
 });
 
