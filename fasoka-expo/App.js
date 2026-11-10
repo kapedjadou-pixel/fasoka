@@ -14,6 +14,7 @@ import LoginScreen from './src/screens/auth/LoginScreen';
 import SignupScreen from './src/screens/auth/SignupScreen';
 import ConditionsScreen from './src/screens/auth/ConditionsScreen';
 import { MessagerieProvider } from './src/context/MessagerieContext';
+import { CommandesProvider } from './src/context/CommandesContext';
 import BandeauMiseAJour from './src/components/BandeauMiseAJour';
 import ShopCreationScreen from './src/screens/boutique/ShopCreationScreen';
 import ClientTabs from './src/navigation/ClientTabs';
@@ -87,11 +88,13 @@ export default function App() {
         <SpaceProvider>
           <CartProvider>
             <MessagerieProvider>
+              <CommandesProvider>
               <NavigationContainer>
                 <StatusBar style="light" backgroundColor={COLORS.noir} />
-                 <BandeauMiseAJour />
+                <BandeauMiseAJour />
                 <RacineApp />
               </NavigationContainer>
+              </CommandesProvider>
             </MessagerieProvider>
           </CartProvider>
         </SpaceProvider>
