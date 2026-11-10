@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS } from '../theme/colors';
 import { ApiClient } from '../api/apiClient';
+import { useAjoutPanier } from '../context/CartContext';
 import Avatar from './messagerie/Avatar';
 
 const VERT = '#1E9E4A';
@@ -22,7 +23,7 @@ function datePublication(valeur) {
 
 // Fiche détaillée d'un produit : photos, prix, disponibilité, description complète, boutique, autres produits de la boutique.
 // `produit` : produit tel que reçu dans la liste (affiché tout de suite) ; la fiche complète est chargée ensuite.
-export default function ProductDetail({ produit, maBoutiqueId, onFermer, onAjouter, onContacter, onVoirPanier, onOuvrirAutre }) {
+export default function ProductDetail({ produit, maBoutiqueId, onFermer, onContacter, onVoirPanier, onOuvrirAutre }) {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [detail, setDetail] = useState(null);
@@ -30,6 +31,7 @@ export default function ProductDetail({ produit, maBoutiqueId, onFermer, onAjout
   const [indexPhoto, setIndexPhoto] = useState(0);
   const [quantite, setQuantite] = useState(1);
   const [ajoute, setAjoute] = useState(false);
+  const { demanderAjout, modale: modaleAjout } = useAjoutPanier();
 
   useEffect(() => {
     let annule = false;
@@ -56,9 +58,9 @@ export default function ProductDetail({ produit, maBoutiqueId, onFermer, onAjout
   function precedente() { setIndexPhoto((i) => (i - 1 + photos.length) % photos.length); }
   function suivante() { setIndexPhoto((i) => (i + 1) % photos.length); }
 
+  // Si le panier contient des articles d'une autre boutique, une confirmation est demandée avant de le vider
   function ajouter() {
-    onAjouter({ ...p, images: photos }, quantiteEffective);
-    setAjoute(true);
+    demanderAjout({ ...p, images: photos }, quantiteEffective, () => setAjoute(true));
   }
 
   return (
@@ -239,6 +241,7 @@ export default function ProductDetail({ produit, maBoutiqueId, onFermer, onAjout
             )}
           </View>
         </View>
+        {modaleAjout}
       </View>
     </Modal>
   );
