@@ -13,3 +13,21 @@ export const MODES_LIVRAISON = {
   retrait: 'Retrait en boutique',
   livraison_vendeur: 'Livraison par le vendeur',
 };
+
+// Même règle que sur le serveur (le serveur reste seul juge) : à quel statut une commande peut passer ensuite
+export const TRANSITIONS_STATUT = {
+  en_attente: ['confirmee', 'annulee'],
+  confirmee: ['en_preparation', 'annulee'],
+  en_preparation: ['prete', 'annulee'],
+  prete: ['livree', 'annulee'],
+  livree: [],
+  annulee: [],
+};
+
+// Texte du bouton qui fait passer la commande à ce statut
+export const LIBELLES_ACTION = {
+  confirmee: 'Confirmer la commande',
+  en_preparation: 'Lancer la préparation',
+  prete: 'Marquer comme prête',
+  livree: 'Marquer comme livrée',
+};
