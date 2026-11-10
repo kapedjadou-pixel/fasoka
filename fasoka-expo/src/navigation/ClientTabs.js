@@ -5,6 +5,7 @@ import { CommonActions } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { COLORS } from '../theme/colors';
 import { useCart } from '../context/CartContext';
+import { useCommandes } from '../context/CommandesContext';
 import { useMessagerie } from '../context/MessagerieContext';
 import SpaceSwitcher from '../components/SpaceSwitcher';
 import { IconePastille, IconeProfil } from '../components/IconesOnglets';
@@ -208,6 +209,7 @@ const styles = StyleSheet.create({
 export default function ClientTabs({ onSelectBoutique }) {
   const { nombreArticles } = useCart();
   const { nonLusClient } = useMessagerie();
+  const { misesAJour } = useCommandes();
 
   return (
     <>
@@ -229,13 +231,17 @@ export default function ClientTabs({ onSelectBoutique }) {
             ? nombreArticles
             : route.name === 'Messages' && nonLusClient > 0
               ? nonLusClient
-              : undefined,
+              : route.name === 'Historique' && misesAJour > 0
+                ? misesAJour
+                : undefined,
         tabBarAccessibilityLabel:
           route.name === 'Panier' && nombreArticles > 0
             ? 'Panier, ' + nombreArticles + (nombreArticles > 1 ? ' articles' : ' article')
             : route.name === 'Messages' && nonLusClient > 0
               ? 'Messages, ' + nonLusClient + (nonLusClient > 1 ? ' non lus' : ' non lu')
-              : undefined,
+              : route.name === 'Historique' && misesAJour > 0
+                ? 'Historique, ' + misesAJour + (misesAJour > 1 ? ' commandes mises à jour' : ' commande mise à jour')
+                : undefined,
       })}
     >
       <Tab.Screen name="Accueil" component={ClientHomeScreen} />
