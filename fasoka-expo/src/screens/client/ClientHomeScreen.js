@@ -6,7 +6,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../theme/colors';
 import { ApiClient } from '../../api/apiClient';
-import { useCart } from '../../context/CartContext';
+import { useAjoutPanier } from '../../context/CartContext';
 import { useAuth } from '../../context/AuthContext';
 import { useSpace } from '../../context/SpaceContext';
 import useRetourEnArriere from '../../hooks/useRetourEnArriere';
@@ -44,7 +44,7 @@ function nouvelleGraine() {
 }
 
 export default function ClientHomeScreen({ navigation }) {
-  const { ajouter } = useCart();
+  const { demanderAjout, modale: modaleAjout } = useAjoutPanier();
   const { user } = useAuth();
   const { maBoutique } = useSpace();
   const { width } = useWindowDimensions();
@@ -166,10 +166,12 @@ export default function ClientHomeScreen({ navigation }) {
     return desabonner;
   }, [navigation, termeActif]);
 
+  // Si le panier contient des articles d'une autre boutique, une confirmation est demandée avant de le vider
   function ajouterAuPanier(produit) {
-    ajouter(produit);
-    setDernierAjout(produit.id);
-    setTimeout(() => setDernierAjout(null), 1200);
+    demanderAjout(produit, 1, () => {
+      setDernierAjout(produit.id);
+      setTimeout(() => setDernierAjout(null), 1200);
+    });
   }
 
   // Ouvre une discussion avec la boutique du produit (onglet Messages), avec un message proposé
@@ -348,13 +350,14 @@ export default function ClientHomeScreen({ navigation }) {
         />
       </View>
 
+      {modaleAjout}
+
       {produitOuvert ? (
         <ProductDetail
           key={produitOuvert.id}
           produit={produitOuvert}
           maBoutiqueId={maBoutique ? maBoutique.id : null}
           onFermer={() => setProduitOuvert(null)}
-          onAjouter={(produit, quantite) => ajouter(produit, quantite)}
           onContacter={(produit) => { setProduitOuvert(null); contacterBoutique(produit); }}
           onVoirPanier={() => { setProduitOuvert(null); navigation.navigate('Panier'); }}
           onOuvrirAutre={(produit) => setProduitOuvert(produit)}
