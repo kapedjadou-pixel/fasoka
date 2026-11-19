@@ -3,7 +3,7 @@ const router = express.Router();
 const { requireAuth, requireShopAccess, requireProductShopAccess } = require('../middleware/auth');
 const upload = require('../middleware/upload');
 const {
-  createProduct, listShopProducts, getProduct, categories, feed, updateProduct, stockAlerts, deleteProduct,
+  createProduct, listShopProducts, getProduct, categories, feed, accueil, suggestions, villes, updateProduct, stockAlerts, deleteProduct,
 } = require('../controllers/productController');
 const {
   uploadProductImage, replaceProductImage, deleteProductImage, reorderProductImages,
@@ -11,6 +11,9 @@ const {
 
 router.get('/feed', feed);
 router.get('/categories', categories);
+router.get('/accueil', accueil);
+router.get('/suggestions', suggestions);
+router.get('/villes', villes);
 router.get('/shop/:shopId', listShopProducts);
 router.post('/shop/:shopId', requireAuth, requireShopAccess, createProduct);
 router.get('/shop/:shopId/alertes-stock', requireAuth, requireShopAccess, stockAlerts);
