@@ -1,4 +1,5 @@
 const db = require('../config/database');
+const { isUuid } = require('../middleware/auth');
 
 // POST /api/shops - Créer une boutique (bascule vers l'espace boutique)
 async function createShop(req, res, next) {
@@ -122,7 +123,8 @@ async function followShop(req, res, next) {
        WHERE id = $1`,
       [req.params.shopId]
     );
-    res.json({ message: 'Abonnement réussi.' });
+    const compte = await db.query(`SELECT nombre_abonnes FROM shops WHERE id = $1`, [req.params.shopId]);
+    res.json({ message: 'Abonnement réussi.', suivi: true, nombre_abonnes: compte.rows[0] ? Number(compte.rows[0].nombre_abonnes) : 0 });
   } catch (err) {
     next(err);
   }
@@ -156,4 +158,55 @@ async function shopStats(req, res, next) {
   }
 }
 
-module.exports = { createShop, myShops, getShop, updateShop, followShop, shopStats };
+// GET /api/shops/:shopId/public - Page boutique : uniquement les informations publiques (rien de sensible),
+// avec le nombre de produits en vente. Une boutique sans produit en vente reste consultable (page vide).
+async function getShopPublic(req, res, next) {
+  try {
+    if (!isUuid(req.params.shopId)) return res.status(404).json({ error: 'Boutique introuvable.' });
+    const result = await db.query(
+      `SELECT s.id, s.nom_boutique, s.logo_url, s.description, s.categorie, s.ville, s.badge_verifie,
+              s.nombre_abonnes, s.nombre_ventes, s.created_at,
+              (SELECT COUNT(*) FROM products p WHERE p.shop_id = s.id AND p.actif = TRUE)::int AS nombre_produits
+       FROM shops s WHERE s.id = $1`,
+      [req.params.shopId]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Boutique introuvable.' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// GET /api/shops/:shopId/suivi - La personne connectée suit-elle cette boutique ?
+async function suiviBoutique(req, res, next) {
+  try {
+    if (!isUuid(req.params.shopId)) return res.status(404).json({ error: 'Boutique introuvable.' });
+    const result = await db.query(
+      `SELECT 1 FROM shop_followers WHERE shop_id = $1 AND user_id = $2`,
+      [req.params.shopId, req.userId]
+    );
+    res.json({ suivi: result.rows.length > 0 });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// DELETE /api/shops/:shopId/follow - Ne plus suivre une boutique
+async function unfollowShop(req, res, next) {
+  try {
+    if (!isUuid(req.params.shopId)) return res.status(404).json({ error: 'Boutique introuvable.' });
+    await db.query(`DELETE FROM shop_followers WHERE shop_id = $1 AND user_id = $2`, [req.params.shopId, req.userId]);
+    const result = await db.query(
+      `UPDATE shops SET nombre_abonnes = (SELECT COUNT(*) FROM shop_followers WHERE shop_id = $1)
+       WHERE id = $1 RETURNING nombre_abonnes`,
+      [req.params.shopId]
+    );
+    res.json({ suivi: false, nombre_abonnes: result.rows[0] ? Number(result.rows[0].nombre_abonnes) : 0 });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = {
+  createShop, myShops, getShop, getShopPublic, updateShop, followShop, suiviBoutique, unfollowShop, shopStats,
+};
