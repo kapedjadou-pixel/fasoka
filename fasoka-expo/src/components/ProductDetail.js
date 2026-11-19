@@ -23,7 +23,7 @@ function datePublication(valeur) {
 
 // Fiche détaillée d'un produit : photos, prix, disponibilité, description complète, boutique, autres produits de la boutique.
 // `produit` : produit tel que reçu dans la liste (affiché tout de suite) ; la fiche complète est chargée ensuite.
-export default function ProductDetail({ produit, maBoutiqueId, onFermer, onContacter, onVoirPanier, onOuvrirAutre }) {
+export default function ProductDetail({ produit, maBoutiqueId, onFermer, onContacter, onVoirPanier, onOuvrirAutre, onOuvrirBoutique }) {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [detail, setDetail] = useState(null);
@@ -46,7 +46,8 @@ export default function ProductDetail({ produit, maBoutiqueId, onFermer, onConta
   const photos = detail && detail.images ? detail.images.map((i) => i.image_url) : (produit.images || []).filter((i) => typeof i === 'string');
   const p = { ...produit, ...(detail || {}) };
   const stock = Number(p.stock_quantite) || 0;
-  const rupture = stock <= 0;
+  const stockConnu = p.stock_quantite !== undefined && p.stock_quantite !== null;
+  const rupture = stockConnu && stock <= 0;
   const maxQuantite = Math.max(1, Math.min(stock, 99));
   const quantiteEffective = Math.min(quantite, maxQuantite);
   const pub = datePublication(p.created_at);
@@ -117,12 +118,14 @@ export default function ProductDetail({ produit, maBoutiqueId, onFermer, onConta
               </View>
               <Text style={styles.nom}>{p.nom}</Text>
               <Text style={styles.prix}>{prixFormate(p.prix)}</Text>
-              <View style={styles.ligneStock}>
-                <Ionicons name={rupture ? 'close-circle' : 'checkmark-circle'} size={16} color={rupture ? COLORS.gris : stock <= 5 ? COLORS.rouge : VERT} />
-                <Text style={[styles.stock, { color: rupture ? COLORS.gris : stock <= 5 ? COLORS.rouge : VERT }]}>
-                  {rupture ? 'Rupture de stock' : stock <= 5 ? `Plus que ${stock} en stock` : 'En stock'}
-                </Text>
-              </View>
+              {stockConnu ? (
+                <View style={styles.ligneStock}>
+                  <Ionicons name={rupture ? 'close-circle' : 'checkmark-circle'} size={16} color={rupture ? COLORS.gris : stock <= 5 ? COLORS.rouge : VERT} />
+                  <Text style={[styles.stock, { color: rupture ? COLORS.gris : stock <= 5 ? COLORS.rouge : VERT }]}>
+                    {rupture ? 'Rupture de stock' : stock <= 5 ? `Plus que ${stock} en stock` : 'En stock'}
+                  </Text>
+                </View>
+              ) : null}
             </View>
 
             {/* Description */}
@@ -138,7 +141,7 @@ export default function ProductDetail({ produit, maBoutiqueId, onFermer, onConta
               <Text style={styles.titreBloc}>Détails</Text>
               {[
                 ['Catégorie', p.categorie],
-                ['Disponibilité', rupture ? 'Indisponible' : stock <= 20 ? `${stock} disponible${stock > 1 ? 's' : ''}` : 'Plus de 20 disponibles'],
+                ['Disponibilité', !stockConnu ? null : rupture ? 'Indisponible' : stock <= 20 ? `${stock} disponible${stock > 1 ? 's' : ''}` : 'Plus de 20 disponibles'],
                 ['Boutique', p.nom_boutique],
                 ['Ville', p.ville],
                 ['Publié le', pub ? pub.texte : null],
@@ -155,6 +158,13 @@ export default function ProductDetail({ produit, maBoutiqueId, onFermer, onConta
               <View style={styles.bloc}>
                 <Text style={styles.titreBloc}>Vendu par</Text>
                 <View style={styles.boutique}>
+                  <TouchableOpacity
+                    style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}
+                    disabled={!onOuvrirBoutique}
+                    onPress={() => onOuvrirBoutique(p.shop_id, { id: p.shop_id, nom_boutique: p.nom_boutique, logo_url: p.boutique_logo, ville: p.ville, badge_verifie: p.badge_verifie })}
+                    accessibilityRole="link"
+                    accessibilityLabel={`Voir la boutique ${p.nom_boutique}`}
+                  >
                   <Avatar uri={p.boutique_logo} nom={p.nom_boutique} taille={46} />
                   <View style={{ flex: 1, marginLeft: 12 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -168,6 +178,7 @@ export default function ProductDetail({ produit, maBoutiqueId, onFermer, onConta
                       </View>
                     ) : null}
                   </View>
+                  </TouchableOpacity>
                   {!estMaBoutique ? (
                     <TouchableOpacity onPress={() => onContacter(p)} style={styles.boutonContacter} accessibilityRole="button" accessibilityLabel={`Écrire à ${p.nom_boutique}`}>
                       <Ionicons name="chatbubble-ellipses-outline" size={17} color={COLORS.noir} />
@@ -175,6 +186,16 @@ export default function ProductDetail({ produit, maBoutiqueId, onFermer, onConta
                     </TouchableOpacity>
                   ) : null}
                 </View>
+                {onOuvrirBoutique ? (
+                  <TouchableOpacity
+                    style={styles.voirBoutique}
+                    onPress={() => onOuvrirBoutique(p.shop_id, { id: p.shop_id, nom_boutique: p.nom_boutique, logo_url: p.boutique_logo, ville: p.ville, badge_verifie: p.badge_verifie })}
+                    accessibilityRole="link"
+                  >
+                    <Text style={styles.voirBoutiqueTexte}>Voir la boutique et tous ses produits</Text>
+                    <Ionicons name="arrow-forward" size={15} color={COLORS.orFonce} />
+                  </TouchableOpacity>
+                ) : null}
               </View>
             ) : null}
 
@@ -219,6 +240,10 @@ export default function ProductDetail({ produit, maBoutiqueId, onFermer, onConta
                   <Text style={styles.boutonPanierTexte}>Voir le panier</Text>
                 </TouchableOpacity>
               </>
+            ) : !stockConnu ? (
+              <View style={[styles.boutonPanier, styles.boutonInactif, { flex: 1 }]}>
+                <Text style={[styles.boutonPanierTexte, { color: COLORS.gris }]}>Chargement…</Text>
+              </View>
             ) : rupture ? (
               <View style={[styles.boutonPanier, styles.boutonInactif, { flex: 1 }]}>
                 <Text style={[styles.boutonPanierTexte, { color: COLORS.gris }]}>Rupture de stock</Text>
@@ -283,6 +308,8 @@ const styles = StyleSheet.create({
   boutique: { flexDirection: 'row', alignItems: 'center' },
   boutiqueNom: { fontSize: 15, fontWeight: '800', color: COLORS.noir, flexShrink: 1 },
   boutiqueVille: { fontSize: 12.5, color: COLORS.gris, marginLeft: 3 },
+  voirBoutique: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 14, paddingVertical: 10, borderTopWidth: 1, borderTopColor: '#F3F0E9' },
+  voirBoutiqueTexte: { fontSize: 13.5, fontWeight: '800', color: COLORS.orFonce },
   boutonContacter: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.or, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9 },
   boutonContacterTexte: { fontWeight: '800', color: COLORS.noir, marginLeft: 6, fontSize: 13 },
 
